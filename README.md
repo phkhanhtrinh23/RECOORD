@@ -48,9 +48,9 @@ recoord check                              # verify the guarantees by enumeratio
 
 ## Data Loading
 
-Write a spec next to the others in [src/recoord/specs/](src/recoord/specs/) —
-start from [catalog.yaml](src/recoord/specs/catalog.yaml), which is the long
-one, or [demo.yaml](src/recoord/specs/demo.yaml), which is three rows. A spec
+Write a spec next to the others in [recoord/specs/](recoord/specs/) —
+start from [catalog.yaml](recoord/specs/catalog.yaml), which is the long
+one, or [demo.yaml](recoord/specs/demo.yaml), which is three rows. A spec
 holds four things:
 
 - **where the table comes from**: `kind: csv` reads `data/<folder>/dirty.csv`
@@ -58,7 +58,7 @@ holds four things:
 - **constraints**: `{lhs: [...], rhs: x}` for a functional dependency, or a
   list of `predicates` for any denial constraint.
 - **rules**: one repair pattern each. A rule with a `program`
-  ([programs.py](src/recoord/programs.py) has them) is replayable; a rule
+  ([programs.py](recoord/programs.py) has them) is replayable; a rule
   without one is a judgement the agent makes. `scope` says what it reads: `row`
   its own row, `row_in_group` its whole constraint group while writing one
   cell, `group` the group as a single bundled proposal.
@@ -76,7 +76,7 @@ who answers it. All of them emit the same proposals, so the coordinator and
 every baseline behave the same whichever one runs.
 
 - `--agent llm` puts a model behind the judgement steps through
-  [llm.py](src/recoord/llm.py): Anthropic or OpenAI, picked from the model id,
+  [llm.py](recoord/llm.py): Anthropic or OpenAI, picked from the model id,
   with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. Completions are cached under
   `.cache/llm`, so a repeat run is free and returns the same answers.
 - `--agent offline` (the default) answers them from the dataset's reference
