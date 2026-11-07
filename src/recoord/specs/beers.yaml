@@ -1,0 +1,40 @@
+# Raha/Baran layout: data/beers/{dirty.csv,clean.csv}
+name: beers
+kind: csv
+folder: beers
+id_column: index
+
+# Only one program-based rule writes each attribute, so no replay cycles (A6).
+constraints:
+  - {name: brewery-name, lhs: [brewery_id], rhs: brewery_name}
+  - {name: brewery-city, lhs: [brewery_id], rhs: city}
+  - {name: brewery-state, lhs: [brewery_id], rhs: state}
+  - {name: city-state, lhs: [city], rhs: state}
+  - {name: beer-style, lhs: [beer_name], rhs: style}
+  - name: ounces-positive
+    predicates:
+      - [t1.ounces, "<=", 0]
+
+rules:
+  # The errors in this benchmark are unit-laden numbers, placeholder markers
+  # and a city that carries its state.
+  - {name: ounces-number, role: normalizer, target: ounces, sources: [ounces],
+     program: number, options: {integer: true}, when: regex, pattern: "[^0-9.]", score: 0.90}
+  - {name: abv-number, role: normalizer, target: abv, sources: [abv],
+     program: number, when: regex, pattern: "%", score: 0.90}
+  - {name: ibu-blank, role: normalizer, target: ibu, sources: [ibu],
+     program: blank, when: regex, pattern: "^(n/a|na|null|-|\\?)$", score: 0.88}
+  - {name: city-suffix, role: normalizer, target: city, sources: [city],
+     program: drop_suffix, when: regex, pattern: "\\s+[A-Z]{2}$", score: 0.86}
+  - {name: impute-brewery, role: imputer, target: brewery_name, sources: [brewery_name],
+     program: plurality, scope: row_in_group, group_key: [brewery_id], when: "null", score: 0.80}
+  - {name: impute-state, role: imputer, target: state, sources: [state], program: plurality,
+     scope: row_in_group, group_key: [brewery_id], when: always, score: 0.72}
+  - {name: match-style, role: matcher, target: style, sources: [beer_name, style],
+     when: always, score: 0.62}
+
+clients:
+  - {name: normalizer, role: normalizer, accuracy: 0.82,
+     rules: [ounces-number, abv-number, ibu-blank, city-suffix]}
+  - {name: imputer, role: imputer, accuracy: 0.78, rules: [impute-brewery, impute-state]}
+  - {name: matcher, role: matcher, accuracy: 0.66, rules: [match-style]}

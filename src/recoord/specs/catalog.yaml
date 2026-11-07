@@ -1,0 +1,77 @@
+# A synthetic multi-vendor product catalog: no download, errors injected here.
+name: catalog
+kind: catalog
+id_column: id
+
+source:
+  products: 300
+  vendors: 18
+  offers: 1200
+
+error_plan:
+  rate: 0.12
+  types: [typo, missing, format, dependency, swap]
+  held_out: [U1, U2, U3]        # only in the test split
+  group_key: [gtin]
+  columns: [brand, title, category, description, unit_volume_ml, pack_size,
+            total_volume_ml, price_cents, currency, country]
+  column_types:
+    unit_volume_ml: [U1, U2, missing, dependency]
+    total_volume_ml: [U1, U2, missing, dependency]
+    pack_size: [U2, missing, typo]
+    category: [U3, format, swap]
+    currency: [swap, missing]
+    title: [typo, format]
+    description: [typo, format]
+  weights: {missing: 1.4, dependency: 1.2, U1: 1.3, U2: 1.0, U3: 0.8}
+
+constraints:
+  - {name: gtin-volume, lhs: [gtin], rhs: unit_volume_ml}
+  - {name: gtin-pack, lhs: [gtin], rhs: pack_size}
+  - {name: gtin-brand, lhs: [gtin], rhs: brand}
+  - {name: gtin-category, lhs: [gtin], rhs: category}
+  - {name: gtin-total, lhs: [gtin], rhs: total_volume_ml}
+  - {name: country-currency, lhs: [country], rhs: currency}
+  - name: same-gtin-price-gap
+    predicates:
+      - [t1.gtin, "=", t2.gtin]
+      - [t1.price_cents, "<", 10]
+  - name: volume-positive
+    predicates:
+      - [t1.unit_volume_ml, "<=", 0]
+
+rules:
+  # The marketplace normalises: it reads a locale-specific description.
+  - {name: volume-from-description, role: normalizer, target: unit_volume_ml,
+     sources: [description], program: locale_quantity, options: {unit: ml},
+     when: regex, pattern: "\\d", score: 0.90, invented: true}
+  - {name: pack-from-title, role: normalizer, target: pack_size,
+     sources: [title], program: pack_size, when: regex,
+     pattern: "(x|er-pack|pack)", score: 0.86, invented: true}
+  - {name: category-case, role: normalizer, target: category,
+     sources: [category], program: normalise_case, options: {style: lower},
+     when: regex, pattern: "[A-Z ]", score: 0.74}
+  # The price-comparison service derives: this is what goes stale.
+  - {name: total-from-unit, role: deriver, target: total_volume_ml,
+     sources: [pack_size, unit_volume_ml], program: product, when: always, score: 0.84}
+  # The retailer imputes from the GTIN group.
+  - {name: impute-volume, role: imputer, target: unit_volume_ml,
+     sources: [unit_volume_ml], program: plurality, scope: group,
+     group_key: [gtin], when: "null", score: 0.72}
+  - {name: impute-brand, role: imputer, target: brand, sources: [brand],
+     program: plurality, scope: group, group_key: [gtin], when: "null", score: 0.70}
+  - {name: impute-currency, role: imputer, target: currency, sources: [country],
+     program: lookup, options: {table: currency}, when: "null", score: 0.80}
+  # The GTIN data pool matches offers: a judgment, so not replayable.
+  - {name: match-category, role: matcher, target: category, sources: [title, description, category],
+     when: always, score: 0.62}
+  - {name: match-brand, role: matcher, target: brand, sources: [title, brand],
+     when: regex, pattern: ".", score: 0.60}
+
+clients:
+  - {name: marketplace, role: normalizer, accuracy: 0.80,
+     rules: [volume-from-description, pack-from-title, category-case]}
+  - {name: price-comparison, role: deriver, accuracy: 0.80, rules: [total-from-unit]}
+  - {name: retailer, role: imputer, accuracy: 0.76, private: true,
+     rules: [impute-volume, impute-brand, impute-currency]}
+  - {name: gtin-pool, role: matcher, accuracy: 0.66, rules: [match-category, match-brand]}

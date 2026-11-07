@@ -1,0 +1,32 @@
+# Raha/Baran layout: data/tax/{dirty.csv,clean.csv}.  200k tuples: use
+# --limit for a prefix, which is also how the size sweep works.
+name: tax
+kind: csv
+folder: tax
+id_column: id
+
+constraints:
+  - {name: zip-city, lhs: [zip], rhs: city}
+  - {name: zip-state, lhs: [zip], rhs: state}
+  - {name: areacode-state, lhs: [area_code], rhs: state}
+  - {name: salary-rate, lhs: [salary], rhs: rate}
+  - {name: marital-exemption, lhs: [marital_status, state], rhs: married_exemp}
+
+rules:
+  - {name: state-case, role: normalizer, target: state, sources: [state],
+     program: normalise_case, options: {style: upper}, when: regex, pattern: "[a-z]", score: 0.86}
+  - {name: city-case, role: normalizer, target: city, sources: [city],
+     program: normalise_case, options: {style: upper}, when: always, score: 0.78}
+  - {name: impute-city, role: imputer, target: city, sources: [city], program: plurality,
+     scope: row_in_group, group_key: [zip], when: "null", score: 0.80}
+  - {name: impute-state, role: imputer, target: state, sources: [state], program: plurality,
+     scope: row_in_group, group_key: [zip], when: always, score: 0.76}
+  - {name: impute-rate, role: imputer, target: rate, sources: [rate], program: plurality,
+     scope: group, group_key: [salary], when: always, score: 0.72}
+  - {name: match-areacode, role: matcher, target: area_code, sources: [state, city, area_code],
+     when: always, score: 0.62}
+
+clients:
+  - {name: normalizer, role: normalizer, accuracy: 0.82, rules: [state-case, city-case]}
+  - {name: imputer, role: imputer, accuracy: 0.78, rules: [impute-city, impute-state, impute-rate]}
+  - {name: matcher, role: matcher, accuracy: 0.64, rules: [match-areacode]}

@@ -1,0 +1,57 @@
+# The running example of the paper, as three offers of one GTIN.
+name: demo
+kind: inline
+id_column: id
+
+dirty_rows:
+  - {id: P101, gtin: "4012345000016", vendor: marketplace, brand: AquaCo,
+     title: "AquaCo Mineralwasser 6er-Pack", category: beverage,
+     description: "Mineralwasser, 6er-Pack, 0,33 L je Flasche",
+     unit_volume_ml: "33", pack_size: "6", total_volume_ml: null,
+     price_cents: "399", currency: EUR, country: DE}
+  - {id: P205, gtin: "4012345000016", vendor: retailer, brand: AquaCo,
+     title: "AquaCo Mineral water 6 x 330 ml", category: beverage,
+     description: "Mineral water, 6 x 330 ml",
+     unit_volume_ml: "330", pack_size: "6", total_volume_ml: "1980",
+     price_cents: "419", currency: EUR, country: DE}
+  - {id: P309, gtin: "4012345000023", vendor: pool, brand: AquaCo,
+     title: "AquaCo Mineral water 6 x 0.5 L", category: beverage,
+     description: "Mineral water, 6 x 0.5 L",
+     unit_volume_ml: "500", pack_size: "6", total_volume_ml: "3000",
+     price_cents: "459", currency: EUR, country: DE}
+
+clean_rows:
+  - {id: P101, gtin: "4012345000016", vendor: marketplace, brand: AquaCo,
+     title: "AquaCo Mineralwasser 6er-Pack", category: beverage,
+     description: "Mineralwasser, 6er-Pack, 0,33 L je Flasche",
+     unit_volume_ml: "330", pack_size: "6", total_volume_ml: "1980",
+     price_cents: "399", currency: EUR, country: DE}
+  - {id: P205, gtin: "4012345000016", vendor: retailer, brand: AquaCo,
+     title: "AquaCo Mineral water 6 x 330 ml", category: beverage,
+     description: "Mineral water, 6 x 330 ml",
+     unit_volume_ml: "330", pack_size: "6", total_volume_ml: "1980",
+     price_cents: "419", currency: EUR, country: DE}
+  - {id: P309, gtin: "4012345000023", vendor: pool, brand: AquaCo,
+     title: "AquaCo Mineral water 6 x 0.5 L", category: beverage,
+     description: "Mineral water, 6 x 0.5 L",
+     unit_volume_ml: "500", pack_size: "6", total_volume_ml: "3000",
+     price_cents: "459", currency: EUR, country: DE}
+
+constraints:
+  - {name: gtin-volume, lhs: [gtin], rhs: unit_volume_ml}
+  - {name: gtin-total, lhs: [gtin], rhs: total_volume_ml}
+
+rules:
+  - {name: volume-from-description, role: normalizer, target: unit_volume_ml,
+     sources: [description], program: locale_quantity, options: {unit: ml},
+     when: regex, pattern: "\\d", score: 0.90}
+  - {name: total-from-unit, role: deriver, target: total_volume_ml,
+     sources: [pack_size, unit_volume_ml], program: product, when: always, score: 0.80}
+  - {name: match-volume, role: matcher, target: unit_volume_ml,
+     sources: [title, description, unit_volume_ml], rows: [P205],
+     when: always, score: 0.60}
+
+clients:
+  - {name: A, role: normalizer, accuracy: 1.0, jitter: 0.0, rules: [volume-from-description]}
+  - {name: B, role: deriver, accuracy: 1.0, jitter: 0.0, rules: [total-from-unit]}
+  - {name: C, role: matcher, accuracy: 0.0, jitter: 0.0, rules: [match-volume]}

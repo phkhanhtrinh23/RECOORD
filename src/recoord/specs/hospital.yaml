@@ -1,0 +1,56 @@
+# Raha/Baran layout: data/hospital/{dirty.csv,clean.csv}
+name: hospital
+kind: csv
+folder: hospital
+id_column: index
+
+# Only one program-based rule writes each attribute: two of them reading and
+# writing the same column would be a cycle in the replay graph, which (A6)
+# resolves by making both non-replayable.
+constraints:
+  - {name: pn-name, lhs: [provider_number], rhs: name}
+  - {name: pn-address, lhs: [provider_number], rhs: address_1}
+  - {name: pn-city, lhs: [provider_number], rhs: city}
+  - {name: pn-phone, lhs: [provider_number], rhs: phone}
+  - {name: pn-owner, lhs: [provider_number], rhs: owner}
+  - {name: zip-city, lhs: [zip], rhs: city}
+  - {name: zip-state, lhs: [zip], rhs: state}
+  - {name: city-county, lhs: [city], rhs: county}
+  - {name: code-measure, lhs: [measure_code], rhs: measure_name}
+
+rules:
+  # Hospital's errors are character substitutions, so the repair that works is
+  # the group's majority value, instantiated per tuple.
+  - {name: impute-name, role: imputer, target: name, sources: [name], program: plurality,
+     scope: row_in_group, group_key: [provider_number], when: always, score: 0.84}
+  - {name: impute-address, role: imputer, target: address_1, sources: [address_1],
+     program: plurality, scope: row_in_group, group_key: [provider_number], when: always, score: 0.80}
+  - {name: impute-city, role: imputer, target: city, sources: [city], program: plurality,
+     scope: row_in_group, group_key: [zip], when: always, score: 0.82}
+  - {name: impute-state, role: imputer, target: state, sources: [state], program: plurality,
+     scope: row_in_group, group_key: [zip], when: always, score: 0.84}
+  - {name: impute-county, role: imputer, target: county, sources: [county], program: plurality,
+     scope: row_in_group, group_key: [city], when: always, score: 0.76}
+  - {name: group-phone, role: imputer, target: phone, sources: [phone], program: plurality,
+     scope: group, group_key: [provider_number], when: always, score: 0.72}
+  - {name: impute-measure, role: normalizer, target: measure_name, sources: [measure_name],
+     program: plurality, scope: row_in_group, group_key: [measure_code], when: always, score: 0.86}
+  - {name: impute-condition, role: normalizer, target: condition, sources: [condition],
+     program: plurality, scope: row_in_group, group_key: [measure_code], when: always, score: 0.84}
+  - {name: impute-code, role: normalizer, target: measure_code, sources: [measure_code],
+     program: plurality, scope: row_in_group, group_key: [measure_name], when: always, score: 0.78}
+  - {name: impute-service, role: normalizer, target: emergency_service,
+     sources: [emergency_service], program: plurality, scope: row_in_group,
+     group_key: [provider_number], when: always, score: 0.80}
+  # The matcher judges, so its proposals are not replayable.
+  - {name: match-owner, role: matcher, target: owner, sources: [name, owner],
+     when: always, score: 0.64}
+  - {name: match-type, role: matcher, target: type, sources: [name, type],
+     when: always, score: 0.62}
+
+clients:
+  - {name: normalizer, role: normalizer, accuracy: 0.80,
+     rules: [impute-measure, impute-condition, impute-code, impute-service]}
+  - {name: imputer, role: imputer, accuracy: 0.78,
+     rules: [impute-name, impute-address, impute-city, impute-state, impute-county, group-phone]}
+  - {name: matcher, role: matcher, accuracy: 0.66, rules: [match-owner, match-type]}

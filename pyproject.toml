@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recoord"
+version = "0.2.0"
+description = "Evidence-aware coordination of repairs proposed by federated data agents"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+sql = ["duckdb>=1.1,<2"]          # optional second query engine
+ilp = ["highspy>=1.7"]            # exact per-component optimum
+llm = ["openai>=1.40", "anthropic>=0.34"]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+recoord = "recoord.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+recoord = ["specs/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

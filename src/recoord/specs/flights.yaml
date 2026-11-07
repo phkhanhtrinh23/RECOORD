@@ -1,0 +1,32 @@
+# Raha/Baran layout: data/flights/{dirty.csv,clean.csv}
+# The dataset where a group's plurality value is often wrong, because the
+# sources copy each other -- enforcing consistency costs F1 here.
+name: flights
+kind: csv
+folder: flights
+id_column: tuple_id
+
+constraints:
+  - {name: flight-sdep, lhs: [flight], rhs: sched_dep_time}
+  - {name: flight-adep, lhs: [flight], rhs: act_dep_time}
+  - {name: flight-sarr, lhs: [flight], rhs: sched_arr_time}
+  - {name: flight-aarr, lhs: [flight], rhs: act_arr_time}
+
+rules:
+  - {name: time-case, role: normalizer, target: sched_dep_time, sources: [sched_dep_time],
+     program: normalise_case, options: {style: lower}, when: regex, pattern: "[A-Z]", score: 0.82}
+  - {name: arr-case, role: normalizer, target: act_arr_time, sources: [act_arr_time],
+     program: normalise_case, options: {style: lower}, when: regex, pattern: "[A-Z]", score: 0.80}
+  - {name: impute-sdep, role: imputer, target: sched_dep_time, sources: [sched_dep_time],
+     program: plurality, scope: row_in_group, group_key: [flight], when: "null", score: 0.74}
+  - {name: impute-adep, role: imputer, target: act_dep_time, sources: [act_dep_time],
+     program: plurality, scope: row_in_group, group_key: [flight], when: "null", score: 0.74}
+  - {name: group-sarr, role: imputer, target: sched_arr_time, sources: [sched_arr_time],
+     program: plurality, scope: group, group_key: [flight], when: always, score: 0.70}
+  - {name: match-aarr, role: matcher, target: act_arr_time,
+     sources: [flight, act_dep_time, act_arr_time], when: always, score: 0.62}
+
+clients:
+  - {name: normalizer, role: normalizer, accuracy: 0.80, rules: [time-case, arr-case]}
+  - {name: imputer, role: imputer, accuracy: 0.76, rules: [impute-sdep, impute-adep, group-sarr]}
+  - {name: matcher, role: matcher, accuracy: 0.64, rules: [match-aarr]}

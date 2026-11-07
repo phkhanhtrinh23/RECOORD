@@ -1,0 +1,31 @@
+# Raha/Baran layout: data/rayyan/{dirty.csv,clean.csv}
+# "jounral_abbreviation" is misspelt in the published header; kept as is.
+name: rayyan
+kind: csv
+folder: rayyan
+id_column: id
+
+constraints:
+  - {name: journal-abbrev, lhs: [journal_title], rhs: jounral_abbreviation}
+  - {name: journal-issn, lhs: [journal_title], rhs: journal_issn}
+  - {name: issn-journal, lhs: [journal_issn], rhs: journal_title}
+  - {name: title-language, lhs: [article_title], rhs: article_language}
+
+rules:
+  - {name: language-case, role: normalizer, target: article_language,
+     sources: [article_language], program: normalise_case, options: {style: lower},
+     when: regex, pattern: "[A-Z]", score: 0.84}
+  - {name: impute-abbrev, role: imputer, target: jounral_abbreviation,
+     sources: [jounral_abbreviation], program: plurality, scope: row_in_group,
+     group_key: [journal_title], when: "null", score: 0.78}
+  - {name: impute-issn, role: imputer, target: journal_issn, sources: [journal_issn],
+     program: plurality, scope: row_in_group, group_key: [journal_title], when: always, score: 0.74}
+  - {name: impute-volume, role: imputer, target: article_jvolumn, sources: [article_jvolumn],
+     program: plurality, scope: row_in_group, group_key: [journal_title], when: "null", score: 0.70}
+  - {name: match-journal, role: matcher, target: journal_title,
+     sources: [jounral_abbreviation, journal_issn, journal_title], when: always, score: 0.62}
+
+clients:
+  - {name: normalizer, role: normalizer, accuracy: 0.78, rules: [language-case]}
+  - {name: imputer, role: imputer, accuracy: 0.76, rules: [impute-abbrev, impute-issn, impute-volume]}
+  - {name: matcher, role: matcher, accuracy: 0.64, rules: [match-journal]}

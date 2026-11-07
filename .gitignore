@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+results/*
+!results/.gitkeep
+data/*
+!data/.gitkeep
+.cache/
+
+# Temporary files and local tooling caches
+*.tmp
+*.temp
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
