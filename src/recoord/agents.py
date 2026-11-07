@@ -291,7 +291,7 @@ class LLMAgent(TemplateAgent):
 
 
 def build_agent(kind: str, name: str, rules: Sequence[Rule], **kw: Any) -> TemplateAgent:
-    if kind in ("offline", "simulated"):
+    if kind == "offline":
         return OfflineAgent(name, rules, **kw)
     if kind == "rules":
         return RuleAgent(name, rules, **{k: v for k, v in kw.items()

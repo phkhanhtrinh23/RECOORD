@@ -38,7 +38,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_cmd.add_argument("--methods", nargs="+", default=["policies"],
                          help=f"method names or a group: {', '.join(GROUPS)}")
     run_cmd.add_argument("--analyse", action="store_true",
-                         help="enumerate valid subsets per component (slow)")
+                         help="enumerate the valid repair sets per component")
     run_cmd.add_argument("--analyse-limit", type=int, default=10)
     run_cmd.add_argument("--repeat", type=int, default=1, help="runs with consecutive seeds")
 

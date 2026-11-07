@@ -31,7 +31,7 @@ class ComponentReport:
         return {k: v for k, v in self.__dict__.items()}
 
 
-class ValidityOracle:
+class ValidityChecker:
     def __init__(self, base: Table, constraints: Sequence[DenialConstraint],
                  fleet: Fleet, graph: Hypergraph):
         self.base = base
@@ -108,7 +108,7 @@ class ValidityOracle:
 def analyse_components(base: Table, pool: Sequence[Proposal], constraints: Sequence[DenialConstraint],
                        fleet: Fleet, graph: Hypergraph, greedy_members: Sequence[Proposal],
                        limit: int = 14, use_ilp: bool = True) -> list[ComponentReport]:
-    oracle = ValidityOracle(base, constraints, fleet, graph)
+    checker = ValidityChecker(base, constraints, fleet, graph)
     by_lineage = {p.lineage: p for p in pool}
     taken = {m.lineage for m in greedy_members}
     out: list[ComponentReport] = []
@@ -118,7 +118,7 @@ def analyse_components(base: Table, pool: Sequence[Proposal], constraints: Seque
         if not report.enumerated or not members:
             out.append(report)
             continue
-        valid = _enumerate_valid(oracle, members)
+        valid = _enumerate_valid(checker, members)
         alone = {m.lineage for m in members if frozenset([m.lineage]) in valid}
         report.p = _interference_parameter(valid, [m.lineage for m in members])
         report.subset_closed = _subset_closed(valid)
@@ -142,7 +142,7 @@ def analyse_components(base: Table, pool: Sequence[Proposal], constraints: Seque
     return out
 
 
-def _enumerate_valid(oracle: ValidityOracle, members: Sequence[Proposal]) -> set[frozenset[str]]:
+def _enumerate_valid(checker: ValidityChecker, members: Sequence[Proposal]) -> set[frozenset[str]]:
     lineages = [m.lineage for m in members]
     index = {m.lineage: m for m in members}
     valid: set[frozenset[str]] = {frozenset()}
@@ -156,7 +156,7 @@ def _enumerate_valid(oracle: ValidityOracle, members: Sequence[Proposal]) -> set
                 candidate = base_set | {lineage}
                 if candidate in valid:
                     continue
-                if oracle.valid([index[l] for l in sorted(candidate)]):
+                if checker.valid([index[l] for l in sorted(candidate)]):
                     valid.add(candidate)
                     nxt.append(candidate)
         frontier = nxt

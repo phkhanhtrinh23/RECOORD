@@ -46,18 +46,7 @@ recoord report results/ --compare lww      # aggregate, with paired intervals
 recoord check                              # the self-checks below
 ```
 
-`--methods` takes names or a group: `policies`, `ablation`, `central`, `all`.
-Other flags: `--limit N` for a prefix of the rows, `--repeat N` for N seeds,
-`--agent llm --model <id>` for a real model, `--analyse` to enumerate the valid
-repair sets per component, `--shards N` to spread the rounds over workers,
-`--waves`, `--clients`, `--cap`, `--fail-rate`, `--partition`, `--joining`,
-`--late-constraint`. `recoord run --help` lists them all.
-
-`recoord sweep` knows: `policies ablation central calibration clients size
-errors waves failures budget departure joining constraints sharding partition
-agents backbones seeds`.
-
-## Your own data
+## Data Loading
 
 Write a spec next to the others in [src/recoord/specs/](src/recoord/specs/) —
 start from [catalog.yaml](src/recoord/specs/catalog.yaml), which is the long
@@ -81,54 +70,17 @@ holds four things:
 
 ## Agents
 
-Three interchangeable backends behind one interface, so the coordinator and
-every baseline see the same kind of proposal whichever one runs.
+An agent is a set of rules. A rule with a program repairs a cell on its own; a
+rule without one leaves a judgement step, and the three backends differ only in
+who answers it. All of them emit the same proposals, so the coordinator and
+every baseline behave the same whichever one runs.
 
-- `--agent offline` (default) resolves judgement steps against the labelled
-  reference at a per-client accuracy. Deterministic, free, no key.
-- `--agent llm` uses a real model through [llm.py](src/recoord/llm.py)
-  (Anthropic or OpenAI, picked from the model id, `ANTHROPIC_API_KEY` /
-  `OPENAI_API_KEY`). Completions are cached under `.cache/llm`, so a second run
-  costs nothing and returns the same answers.
-- `--agent rules` is the fixed rule library: the deterministic rules a person
-  writes in advance, without the ones an agent only writes at run time.
-
-## Self-checks
-
-`recoord check` verifies by enumeration, on small instances, four properties:
-the output has no stale repair, no constraint violation and no write conflict;
-permuting the arrival order of the proposals does not change it; splitting the
-rounds over any number of workers returns the one-worker result; and two pools
-whose patches and scores are identical but whose queries differ get different
-answers, so a policy that ignores evidence cannot tell them apart.
-
-## What is where
-
-| | |
-|---|---|
-| [coordinator.py](src/recoord/coordinator.py) | the merge algorithm |
-| [hypergraph.py](src/recoord/hypergraph.py) | which patch can disturb which evidence |
-| [rrr.py](src/recoord/rrr.py) | retain / replay / regenerate |
-| [constraints.py](src/recoord/constraints.py) | denial constraints and violations |
-| [federation.py](src/recoord/federation.py) | clients, calls to them, and their cost |
-| [agents.py](src/recoord/agents.py) | agents built from rules |
-| [baselines.py](src/recoord/baselines.py) | the other merge policies |
-| [analysis.py](src/recoord/analysis.py) | per-component optima and conditions |
-| [experiments.py](src/recoord/experiments.py), [sweeps.py](src/recoord/sweeps.py) | the drivers |
-
-Optional extras: `pip install -e '.[ilp]'` for exact per-component optima,
-`'.[llm]'` for the model clients.
-
-## Notes
-
-- Results land in `results/` as JSON (full, with the merged table) and CSV (one
-  row per method). `recoord report` reads either, aggregates over seeds, and
-  gives paired bootstrap intervals with a Holm correction.
-- A NULL counts as *not repaired* on a wrong cell and as a *wrong repair* on a
-  correct one, so nulling is never free.
-- Each repair's replayability is decided per lineage. Two rules that both read
-  and write one column depend on each other in both directions, so they are
-  merged as judgements rather than re-run; the `frozen` column counts them.
-- Cost scales with the size of the constraint groups, not only the row count.
-  The `size` sweep reports the curve, and `--shards` spreads the rounds over
-  disjoint components without changing the result.
+- `--agent llm` puts a model behind the judgement steps through
+  [llm.py](src/recoord/llm.py): Anthropic or OpenAI, picked from the model id,
+  with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. Completions are cached under
+  `.cache/llm`, so a repeat run is free and returns the same answers.
+- `--agent offline` (the default) answers them from the dataset's reference
+  table at a per-client accuracy. Runs need no key, cost nothing and repeat
+  exactly, which is what the merge and cost comparisons are measured on.
+- `--agent rules` drops the judgement steps and keeps the programs: the fixed
+  rule library a person writes in advance.
