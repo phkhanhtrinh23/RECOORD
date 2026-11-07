@@ -1,4 +1,3 @@
-# The running example of the paper, as three offers of one GTIN.
 name: demo
 kind: inline
 id_column: id

@@ -1,16 +1,3 @@
-"""Data agents running at the clients.
-
-An agent is described by *rules*: each one says which cells it looks at, when it
-fires, and how it turns the answers into a patch.  A rule with a `program` is
-replayable, so its proposals can be re-derived without a model.  A rule without
-one is a judgment: the value comes from a model (`LLMAgent`) or, in offline
-runs, from a noisy oracle (`SimulatedAgent`).
-
-`SimulatedAgent` is a simulator, not a model: it makes the whole pipeline
-runnable and deterministic without API keys.  Numbers that are meant to say
-something about LLM behaviour need `--agent llm`.
-"""
-
 from __future__ import annotations
 
 import random
@@ -28,21 +15,19 @@ ROLES = ("imputer", "normalizer", "deriver", "matcher")
 
 @dataclass(frozen=True)
 class Rule:
-    """One repair pattern an agent knows."""
-
     name: str
-    target: str                                  # the column it writes
-    sources: tuple[str, ...] = ()                # the columns it reads
-    program: str | None = None                   # None: a model judgment
+    target: str
+    sources: tuple[str, ...] = ()
+    program: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
-    when: str = "always"                         # always | null | regex | numeric | not_null
+    when: str = "always"
     pattern: str = ""
-    scope: str = "row"                           # row | row_in_group | group
+    scope: str = "row"
     group_key: tuple[str, ...] = ()
-    rows: tuple[str, ...] = ()                   # restrict the rule to these rows
+    rows: tuple[str, ...] = ()
     score: float = 0.8
     role: str = "normalizer"
-    invented: bool = False       # written at runtime, not in a fixed rule library
+    invented: bool = False
 
     @property
     def replayable(self) -> bool:
@@ -89,11 +74,7 @@ def parse_rules(specs: Sequence[dict[str, Any]]) -> list[Rule]:
     return out
 
 
-# -- the shared proposal builder -------------------------------------------
-
 class TemplateAgent:
-    """Turns rules into proposals; subclasses decide how judgments are made."""
-
     def __init__(self, name: str, rules: Sequence[Rule], seed: int = 0,
                  max_proposals: int | None = None, turns: int = 3):
         self.name = name
@@ -108,7 +89,6 @@ class TemplateAgent:
     def usage(self) -> Usage:
         return self._usage
 
-    # -- the agent's query loop -------------------------------------------
     def propose(self, view: Table, client: str) -> list[Proposal]:
         out: list[Proposal] = []
         for rule in self.rules:
@@ -116,7 +96,7 @@ class TemplateAgent:
         out.sort(key=lambda p: p.id)
         if self.max_proposals is not None:
             out = out[: self.max_proposals]
-        # One agent call per rule covers its whole query loop.
+
         self._usage.calls += len(self.rules)
         self._usage.input_tokens += self.turns * 4_870 * len(self.rules)
         self._usage.output_tokens += self.turns * 163 * len(self.rules)
@@ -147,11 +127,6 @@ class TemplateAgent:
         return out
 
     def _fire_in_group(self, rule: Rule, view: Table, client: str) -> list[Proposal]:
-        """One proposal per tuple, reading its whole group.
-
-        This is a program instantiated per tuple: it writes one cell, so a
-        replay on fresh evidence writes that same cell and stays replayable.
-        """
         buckets = self._buckets(rule, view)
         out = []
         for key, members in sorted(buckets.items(), key=lambda kv: str(kv[0])):
@@ -168,7 +143,6 @@ class TemplateAgent:
         return out
 
     def _fire_group(self, rule: Rule, view: Table, client: str) -> list[Proposal]:
-        """One proposal per DC group: the bundle of Section 3.3."""
         buckets = self._buckets(rule, view)
         out = []
         for key, members in sorted(buckets.items(), key=lambda kv: str(kv[0])):
@@ -201,7 +175,7 @@ class TemplateAgent:
         if not writes:
             return None
         options = dict(spec.options)
-        if rule.program is None:   # freeze the judgment so the patch is reproducible
+        if rule.program is None:
             options["values"] = [w.value for w in writes]
         spec = replace(spec, targets=tuple(w.cell for w in writes), options=options)
         return Proposal(
@@ -211,9 +185,7 @@ class TemplateAgent:
             meta={"rule": rule.name, "role": rule.role},
         )
 
-    # -- regeneration ------------------------------------------------------
     def regenerate(self, proposal: Proposal, view: Table, answers: tuple[Answer, ...]) -> Proposal | None:
-        """Re-prompt: the agent sees the new answers and may re-plan."""
         rule = next((r for r in self.rules if r.name == proposal.meta.get("rule")), None)
         if rule is None:
             return None
@@ -234,7 +206,6 @@ class TemplateAgent:
         return replace(proposal, writes=tuple(writes), evidence=evidence,
                        score=self.confidence(rule, writes))
 
-    # -- hooks -------------------------------------------------------------
     @property
     def private(self) -> dict[str, Any]:
         return {}
@@ -248,29 +219,15 @@ class TemplateAgent:
 
 
 class RuleAgent(TemplateAgent):
-    """The hand-written rule library used as a control.
-
-    It keeps the deterministic rules that a person would have written in
-    advance, and drops both the judgments and the rules marked `invented` --
-    the ones an agent only writes once it has seen the data.
-    """
-
     def __init__(self, name: str, rules: Sequence[Rule], **kw: Any):
         super().__init__(name, [r for r in rules
                                 if r.program is not None and not r.invented], **kw)
 
-    def judge(self, rule, view, targets, answers):   # pragma: no cover - no judgments
+    def judge(self, rule, view, targets, answers):
         return None
 
 
-class SimulatedAgent(TemplateAgent):
-    """Offline stand-in for an LLM agent: a noisy oracle for judgments.
-
-    `accuracy` is the chance a judgment is right; a wrong judgment copies a
-    plausible value from the same column, which is what a real matcher does
-    when it links the wrong offer.
-    """
-
+class OfflineAgent(TemplateAgent):
     def __init__(self, name: str, rules: Sequence[Rule], reference: Table | None = None,
                  accuracy: float = 0.75, private: dict[str, Any] | None = None,
                  jitter: float = 0.12, **kw: Any):
@@ -285,7 +242,6 @@ class SimulatedAgent(TemplateAgent):
         return self._private
 
     def confidence(self, rule: Rule, writes: Sequence[Write]) -> float:
-        """Weakly informative scores, as measured on real agents."""
         if not self.jitter:
             return rule.score
         return round(min(0.99, max(0.05, rule.score + self._rng.uniform(-self.jitter, self.jitter))), 3)
@@ -306,8 +262,6 @@ class SimulatedAgent(TemplateAgent):
 
 
 class LLMAgent(TemplateAgent):
-    """Judgments from a model, through `recoord.llm`."""
-
     _last_score: float | None = None
 
     def __init__(self, name: str, rules: Sequence[Rule], client: Any,
@@ -337,8 +291,8 @@ class LLMAgent(TemplateAgent):
 
 
 def build_agent(kind: str, name: str, rules: Sequence[Rule], **kw: Any) -> TemplateAgent:
-    if kind == "simulated":
-        return SimulatedAgent(name, rules, **kw)
+    if kind in ("offline", "simulated"):
+        return OfflineAgent(name, rules, **kw)
     if kind == "rules":
         return RuleAgent(name, rules, **{k: v for k, v in kw.items()
                                          if k in ("seed", "max_proposals", "turns")})

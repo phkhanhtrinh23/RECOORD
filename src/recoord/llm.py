@@ -1,10 +1,3 @@
-"""A small model client for the judgment steps of an LLM agent.
-
-Supports the Anthropic and OpenAI APIs, caches every completion on disk keyed
-by the prompt, and reports token usage so cost comparisons are honest.  Without
-a key, use `--agent simulated`.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -43,7 +36,6 @@ class LLMClient:
         self.provider = provider or ("openai" if model.startswith(("gpt-", "o1", "o3")) else "anthropic")
         self._client: Any = None
 
-    # -- public ------------------------------------------------------------
     def repair(self, rule: str, columns: Sequence[str], rows: Sequence[str],
                answers: tuple, instruction: str = "") -> Reply:
         prompt = json.dumps({
@@ -59,7 +51,6 @@ class LLMClient:
         self._write_cache(prompt, payload)
         return Reply(payload.get("values", []), float(payload.get("confidence", 0.5)), usage)
 
-    # -- providers ---------------------------------------------------------
     def _complete(self, prompt: str) -> tuple[str, Usage]:
         if self.provider == "anthropic":
             return self._anthropic(prompt)
@@ -86,7 +77,6 @@ class LLMClient:
         usage = reply.usage
         return reply.choices[0].message.content or "", Usage(1, usage.prompt_tokens, usage.completion_tokens)
 
-    # -- cache -------------------------------------------------------------
     def _path(self, prompt: str) -> Path:
         digest = hashlib.sha256(f"{self.model}|{self.temperature}|{prompt}".encode()).hexdigest()
         return self.cache / f"{digest}.json"

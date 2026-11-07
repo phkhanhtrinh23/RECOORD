@@ -1,4 +1,3 @@
-# A synthetic multi-vendor product catalog: no download, errors injected here.
 name: catalog
 kind: catalog
 id_column: id
@@ -41,7 +40,6 @@ constraints:
       - [t1.unit_volume_ml, "<=", 0]
 
 rules:
-  # The marketplace normalises: it reads a locale-specific description.
   - {name: volume-from-description, role: normalizer, target: unit_volume_ml,
      sources: [description], program: locale_quantity, options: {unit: ml},
      when: regex, pattern: "\\d", score: 0.90, invented: true}
@@ -51,10 +49,8 @@ rules:
   - {name: category-case, role: normalizer, target: category,
      sources: [category], program: normalise_case, options: {style: lower},
      when: regex, pattern: "[A-Z ]", score: 0.74}
-  # The price-comparison service derives: this is what goes stale.
   - {name: total-from-unit, role: deriver, target: total_volume_ml,
      sources: [pack_size, unit_volume_ml], program: product, when: always, score: 0.84}
-  # The retailer imputes from the GTIN group.
   - {name: impute-volume, role: imputer, target: unit_volume_ml,
      sources: [unit_volume_ml], program: plurality, scope: group,
      group_key: [gtin], when: "null", score: 0.72}
@@ -62,7 +58,6 @@ rules:
      program: plurality, scope: group, group_key: [gtin], when: "null", score: 0.70}
   - {name: impute-currency, role: imputer, target: currency, sources: [country],
      program: lookup, options: {table: currency}, when: "null", score: 0.80}
-  # The GTIN data pool matches offers: a judgment, so not replayable.
   - {name: match-category, role: matcher, target: category, sources: [title, description, category],
      when: always, score: 0.62}
   - {name: match-brand, role: matcher, target: brand, sources: [title, brand],

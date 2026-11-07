@@ -1,5 +1,3 @@
-"""The running example, and the guarantees on it."""
-
 from dataclasses import replace
 
 from recoord.coordinator import Coordinator, CoordinatorConfig, utility
@@ -34,7 +32,7 @@ def test_recoord_retains_replays_and_rejects(demo_run):
     assert report.table.value(Cell("P101", "unit_volume_ml")) == "330"
     assert report.table.value(Cell("P101", "total_volume_ml")) == "1980"
     assert report.stats["stale"] == 0 and report.stats["violations"] == 0
-    assert report.stats["dc_rejected"] == 1          # the matcher's 500
+    assert report.stats["dc_rejected"] == 1
     assert round(utility(report.selected), 6) == 1.7
 
 

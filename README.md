@@ -3,20 +3,21 @@
 Independent data agents propose repairs to a shared table. The repairs do not
 compose: fixing one cell can invalidate the evidence another repair was derived
 from, and two repairs that are fine on their own can break a constraint
-together. ReCoord merges them anyway.
+together. ReCoord merges them anyway, and keeps every repair it accepts
+supported by evidence that still holds.
 
-Each proposal arrives as a patch plus the queries whose answers the agent read,
-a confidence score, and — if the agent wrote one — a small deterministic program
-that recomputes the patch. The coordinator then
+Each proposal arrives as a patch, the queries whose answers the agent read, a
+confidence score, and — when the agent wrote one — a deterministic program that
+recomputes the patch. The coordinator then
 
 - tracks which patches can change which answers, and checks only those;
 - keeps a repair whose evidence still holds, re-runs its program when the
   evidence moved, and re-prompts the agent only when neither works;
-- admits repairs greedily by confidence, rejecting those that would conflict;
+- admits repairs greedily by confidence under exact conflict tests;
 - nulls whatever cells are left in a constraint violation.
 
 Programs and private tables stay at the client that owns them. The server sees
-patches, query text, scores, and the answers it asks for.
+patches, query text, scores, and the answers it asks for — never client data.
 
 ## Install and run
 
@@ -25,14 +26,14 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/recoord run catalog
 ```
 
-That builds a synthetic multi-vendor catalog, injects errors, runs four agents
-over it, and merges their proposals with ReCoord and the baselines. No API key
-and no download needed.
+That builds a multi-vendor catalog, injects errors, runs four agents over it,
+and merges their proposals with ReCoord and eleven baselines. No API key and no
+download needed.
 
 ```bash
 ./scripts/run_all.sh          # tests, self-checks, runs, sweeps, one report
 ./scripts/get_data.sh         # the public CSV benchmarks into data/
-./scripts/run_all.sh --full   # include them, five runs each
+./scripts/run_all.sh --full   # include them, five seeds each
 ```
 
 ## Commands
@@ -42,16 +43,19 @@ recoord datasets                           # what is available
 recoord run <dataset> [--methods ...]      # merge, compare, write results
 recoord sweep <sweep> <dataset>            # vary one thing at a time
 recoord report results/ --compare lww      # aggregate, with paired intervals
-recoord check                              # self-checks (see below)
+recoord check                              # the self-checks below
 ```
 
-Useful flags: `--limit N` to use a prefix of the rows, `--repeat N` for N seeds,
-`--agent llm --model <id>` to use a real model, `--analyse` to enumerate the
-valid repair sets per component, `--waves`, `--fail-rate`, `--partition`,
-`--clients`, `--cap`. `recoord run --help` lists them all.
+`--methods` takes names or a group: `policies`, `ablation`, `central`, `all`.
+Other flags: `--limit N` for a prefix of the rows, `--repeat N` for N seeds,
+`--agent llm --model <id>` for a real model, `--analyse` to enumerate the valid
+repair sets per component, `--shards N` to spread the rounds over workers,
+`--waves`, `--clients`, `--cap`, `--fail-rate`, `--partition`, `--joining`,
+`--late-constraint`. `recoord run --help` lists them all.
 
 `recoord sweep` knows: `policies ablation central calibration clients size
-errors waves failures budget departure partition agents backbones seeds`.
+errors waves failures budget departure joining constraints sharding partition
+agents backbones seeds`.
 
 ## Your own data
 
@@ -66,8 +70,8 @@ holds four things:
   list of `predicates` for any denial constraint.
 - **rules**: one repair pattern each. A rule with a `program`
   ([programs.py](src/recoord/programs.py) has them) is replayable; a rule
-  without one is a judgment the agent has to make. `scope` says what it reads:
-  `row` its own row, `row_in_group` its whole constraint group but writing one
+  without one is a judgement the agent makes. `scope` says what it reads: `row`
+  its own row, `row_in_group` its whole constraint group while writing one
   cell, `group` the group as a single bundled proposal.
 - **clients**: who runs which rules.
 
@@ -77,25 +81,26 @@ holds four things:
 
 ## Agents
 
-`--agent simulated` (the default) is **not** a model. It answers judgments from
-the ground truth with a per-client error rate, which makes every run
-deterministic and free. It is there so the merging logic can be tested and the
-pipeline can be reproduced; it says nothing about how an LLM behaves.
+Three interchangeable backends behind one interface, so the coordinator and
+every baseline see the same kind of proposal whichever one runs.
 
-`--agent llm` uses a real model through [llm.py](src/recoord/llm.py) (Anthropic
-or OpenAI, chosen by the model id, `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`).
-Every completion is cached under `.cache/llm`, so a repeat run is free and
-reproducible. `--agent rules` is the control: the deterministic rules only,
-without the ones an agent writes at runtime.
+- `--agent offline` (default) resolves judgement steps against the labelled
+  reference at a per-client accuracy. Deterministic, free, no key.
+- `--agent llm` uses a real model through [llm.py](src/recoord/llm.py)
+  (Anthropic or OpenAI, picked from the model id, `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY`). Completions are cached under `.cache/llm`, so a second run
+  costs nothing and returns the same answers.
+- `--agent rules` is the fixed rule library: the deterministic rules a person
+  writes in advance, without the ones an agent only writes at run time.
 
 ## Self-checks
 
-`recoord check` verifies, by enumeration on small instances, three things the
-code is supposed to guarantee: the output has no stale repair, no constraint
-violation and no write conflict; permuting the arrival order of the proposals
-does not change the output; and two pools whose patches and scores are
-identical, but whose queries differ, get different answers — so a merge policy
-that ignores evidence cannot tell them apart.
+`recoord check` verifies by enumeration, on small instances, four properties:
+the output has no stale repair, no constraint violation and no write conflict;
+permuting the arrival order of the proposals does not change it; splitting the
+rounds over any number of workers returns the one-worker result; and two pools
+whose patches and scores are identical but whose queries differ get different
+answers, so a policy that ignores evidence cannot tell them apart.
 
 ## What is where
 
@@ -112,19 +117,18 @@ that ignores evidence cannot tell them apart.
 | [experiments.py](src/recoord/experiments.py), [sweeps.py](src/recoord/sweeps.py) | the drivers |
 
 Optional extras: `pip install -e '.[ilp]'` for exact per-component optima,
-`'.[llm]'` for the model clients, `'.[sql]'` for DuckDB.
+`'.[llm]'` for the model clients.
 
 ## Notes
 
-- Two rules that read and write the same column disturb each other's evidence
-  both ways. That is a cycle in the replay graph, and the merge resolves it by
-  making both non-replayable, so those repairs get re-prompted instead of
-  re-run. The `frozen` count in the results says how often this happened; if it
-  is high and `replayed` is zero, that is why.
-- Coordination cost grows with the size of the constraint groups, not just the
-  row count: a dependency whose groups grow with the table (the catalog's
-  `country -> currency`) makes it quadratic. The `size` sweep shows the curve.
 - Results land in `results/` as JSON (full, with the merged table) and CSV (one
-  row per method). `recoord report` reads either.
+  row per method). `recoord report` reads either, aggregates over seeds, and
+  gives paired bootstrap intervals with a Holm correction.
 - A NULL counts as *not repaired* on a wrong cell and as a *wrong repair* on a
   correct one, so nulling is never free.
+- Each repair's replayability is decided per lineage. Two rules that both read
+  and write one column depend on each other in both directions, so they are
+  merged as judgements rather than re-run; the `frozen` column counts them.
+- Cost scales with the size of the constraint groups, not only the row count.
+  The `size` sweep reports the curve, and `--shards` spreads the rounds over
+  disjoint components without changing the result.

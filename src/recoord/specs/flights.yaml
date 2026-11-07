@@ -1,6 +1,3 @@
-# Raha/Baran layout: data/flights/{dirty.csv,clean.csv}
-# The dataset where a group's plurality value is often wrong, because the
-# sources copy each other -- enforcing consistency costs F1 here.
 name: flights
 kind: csv
 folder: flights

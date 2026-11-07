@@ -1,12 +1,3 @@
-"""How informative the agents' confidence scores are, and how to fix them.
-
-Utility is the expected number of correct cells only for calibrated scores
-(Proposition 4.4), so a server that merges several clients' proposals wants a
-monotone per-client recalibration.  We fit one on a labelled sample with
-pool-adjacent violators (isotonic regression), which keeps the queue order
-inside a client and therefore the guarantees.
-"""
-
 from __future__ import annotations
 
 from bisect import bisect_right
@@ -25,7 +16,6 @@ class Scored:
 
 
 def label(proposals: Iterable[Proposal], repaired: Table, clean: Table) -> list[Scored]:
-    """A proposal counts as correct if every cell it wrote holds the true value."""
     out = []
     for proposal in proposals:
         cells = [c for c in proposal.write_cells if c.row in clean]
@@ -37,7 +27,6 @@ def label(proposals: Iterable[Proposal], repaired: Table, clean: Table) -> list[
 
 
 def auroc(samples: Sequence[Scored]) -> float:
-    """Can the score tell a correct proposal from a wrong one?"""
     pos = [s.score for s in samples if s.correct]
     neg = [s.score for s in samples if not s.correct]
     if not pos or not neg:
@@ -56,7 +45,6 @@ def auroc(samples: Sequence[Scored]) -> float:
 
 
 def ece(samples: Sequence[Scored], bins: int = 10) -> float:
-    """Expected calibration error over equal-width score bins."""
     if not samples:
         return 0.0
     buckets: list[list[Scored]] = [[] for _ in range(bins)]
@@ -73,7 +61,6 @@ def ece(samples: Sequence[Scored], bins: int = 10) -> float:
 
 
 def isotonic(samples: Sequence[Scored]) -> Callable[[float], float]:
-    """A monotone score map by pool-adjacent violators."""
     points = sorted(((s.score, 1.0 if s.correct else 0.0) for s in samples), key=lambda p: p[0])
     if not points:
         return lambda x: x
@@ -95,15 +82,13 @@ def isotonic(samples: Sequence[Scored]) -> Callable[[float], float]:
     def apply(score: float) -> float:
         index = max(0, bisect_right(xs, score) - 1)
         fitted = min(1.0, max(0.0, ys[index]))
-        # Isotonic steps are flat; the raw score breaks ties inside a step, so
-        # the map stays strictly monotone and the queue order is preserved.
+
         return round(min(1.0, fitted + 1e-3 * score), 6)
 
     return apply
 
 
 def fit(samples: Sequence[Scored]) -> dict[str, Callable[[float], float]]:
-    """One monotone map per client, plus a pooled fallback."""
     by_client: dict[str, list[Scored]] = {}
     for s in samples:
         by_client.setdefault(s.client, []).append(s)

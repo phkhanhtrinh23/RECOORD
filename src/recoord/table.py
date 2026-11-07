@@ -1,5 +1,3 @@
-"""The shared relation and the evaluation of evidence queries over it."""
-
 from __future__ import annotations
 
 from typing import Any, Iterable, Iterator
@@ -8,19 +6,12 @@ from .model import Answer, Atom, Cell, Evidence, Query, Value, Write, compare
 
 
 def norm(value: Value) -> Value:
-    """Empty strings are NULL; everything else is compared as text."""
     if value is None or value == "":
         return None
     return str(value)
 
 
 class Table:
-    """An in-memory relation indexed by a stable row id.
-
-    Query answers are cached and invalidated per column, so a patch that
-    touches nothing a query reads costs nothing to re-check.
-    """
-
     __slots__ = ("columns", "id_column", "_rows", "_order", "_cache", "_cached_columns",
                  "_groups", "_by_column")
 
@@ -44,7 +35,6 @@ class Table:
         self._groups: dict[tuple[str, ...], dict[tuple[Value, ...], list[str]]] = {}
         self._by_column: dict[str, set[str]] = {}
 
-    # -- shape -------------------------------------------------------------
     def __len__(self) -> int:
         return len(self._order)
 
@@ -86,7 +76,6 @@ class Table:
             out.append(record)
         return out
 
-    # -- updates -----------------------------------------------------------
     def apply(self, writes: Iterable[Write]) -> None:
         touched: set[str] = set()
         for write in writes:
@@ -102,7 +91,7 @@ class Table:
 
     def _invalidate(self, columns: set[str]) -> None:
         for column in columns:
-            for key in self._by_column.pop(column, ()):      # reverse index
+            for key in self._by_column.pop(column, ()):
                 self._cache.pop(key, None)
                 read = self._cached_columns.pop(key, frozenset())
                 for other in read - {column}:
@@ -111,10 +100,6 @@ class Table:
             self._groups.pop(key, None)
 
     def groups(self, key_columns: tuple[str, ...]) -> dict[tuple[Value, ...], list[str]]:
-        """Row ids per value of `key_columns`, cached until one of them changes.
-
-        A NULL key cannot take part in a DC witness, so those rows are left out.
-        """
         index = self._groups.get(key_columns)
         if index is not None:
             return index
@@ -131,7 +116,6 @@ class Table:
         self._groups[key_columns] = index
         return index
 
-    # -- query evaluation --------------------------------------------------
     def answer(self, query: Query) -> Answer:
         cached = self._cache.get(query.name)
         if cached is not None:
@@ -145,7 +129,7 @@ class Table:
 
     def provenance(self, query: Query) -> frozenset[Cell]:
         self.answer(query)
-        return self._cache[query.name][1]  # type: ignore[return-value]
+        return self._cache[query.name][1]
 
     def evidence(self, queries: Iterable[Query]) -> Evidence:
         queries = list(queries)
@@ -156,7 +140,6 @@ class Table:
         return Evidence(answers, frozenset(cells))
 
     def matches(self, evidence: Evidence, queries: Iterable[Query]) -> bool:
-        """Is every cached answer still the one this instance produces?"""
         queries = list(queries)
         if len(evidence.answers) != len(queries):
             return False
@@ -209,7 +192,6 @@ def _sort_key(row: tuple[Value, ...]) -> tuple:
 
 
 def restrict(table: Table, row_ids: Iterable[str]) -> Table:
-    """The master copy as a client with a partial copy sees it."""
     keep = set(row_ids)
     return Table(
         ({table.id_column: rid, **row} for rid, row in table.rows() if rid in keep),

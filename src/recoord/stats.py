@@ -1,10 +1,3 @@
-"""Cluster bootstrap and Holm correction.
-
-Differences between policies are paired on the same proposals, and intervals
-come from resampling DC groups (and runs) rather than cells, because errors
-inside a group are not independent.
-"""
-
 from __future__ import annotations
 
 import random
@@ -32,7 +25,6 @@ class Interval:
 
 def cluster_bootstrap(clusters: Sequence[Sequence[float]], statistic: Callable[[Sequence[float]], float] | None = None,
                       draws: int = 10_000, alpha: float = 0.05, seed: int = 0) -> Interval:
-    """Resample whole clusters with replacement `draws` times."""
     statistic = statistic or _mean
     flat = [v for cluster in clusters for v in cluster]
     if not flat:
@@ -53,14 +45,12 @@ def cluster_bootstrap(clusters: Sequence[Sequence[float]], statistic: Callable[[
 
 def paired_difference(a: dict[str, Sequence[float]], b: dict[str, Sequence[float]],
                       draws: int = 10_000, seed: int = 0) -> Interval:
-    """A paired cluster bootstrap of the per-cluster difference a - b."""
     keys = sorted(set(a) & set(b))
     clusters = [[x - y for x, y in zip(a[k], b[k])] for k in keys]
     return cluster_bootstrap(clusters, draws=draws, seed=seed)
 
 
 def holm(pvalues: dict[str, float], alpha: float = 0.05) -> dict[str, bool]:
-    """Holm-Bonferroni: which comparisons survive the family-wise correction."""
     order = sorted(pvalues, key=lambda k: pvalues[k])
     m = len(order)
     out, rejected = {}, True
@@ -71,7 +61,6 @@ def holm(pvalues: dict[str, float], alpha: float = 0.05) -> dict[str, bool]:
 
 
 def bootstrap_pvalue(interval_samples: Sequence[float]) -> float:
-    """Two-sided bootstrap p-value for a difference being zero."""
     if not interval_samples:
         return 1.0
     below = sum(1 for v in interval_samples if v <= 0) / len(interval_samples)

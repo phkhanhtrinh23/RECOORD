@@ -1,11 +1,3 @@
-"""Values exchanged between clients and the coordinator.
-
-A client's agent reads its copy of the shared relation through *evidence
-queries* and emits a *proposal*: a patch, the queries whose answers it used, an
-optional deterministic *program* that recomputes the patch from those answers,
-and a confidence score.  The coordinator only ever sees what `Upload` carries.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -22,7 +14,7 @@ class Cell:
     row: str
     column: str
 
-    def __str__(self) -> str:  # pragma: no cover - debugging aid
+    def __str__(self) -> str:
         return f"{self.row}.{self.column}"
 
 
@@ -34,12 +26,6 @@ class Write:
 
 @dataclass(frozen=True)
 class Atom:
-    """One relation access of an evidence query.
-
-    `columns` are read (and projected), `selections` are local constant
-    predicates, and `rows` optionally pins the access to known row ids.
-    """
-
     columns: tuple[str, ...]
     selections: tuple[tuple[str, str, Value], ...] = ()
     rows: tuple[str, ...] | None = None
@@ -50,7 +36,6 @@ class Atom:
         return frozenset(self.columns) | {c for c, _, _ in self.selections}
 
     def satisfiable_on(self, values: dict[str, Value], free: Iterable[str]) -> bool:
-        """Can the local selections hold for a tuple whose `free` cells vary?"""
         free = set(free)
         for column, op, const in self.selections:
             if column in free:
@@ -62,8 +47,6 @@ class Atom:
 
 @dataclass(frozen=True)
 class Query:
-    """A select--project--join query over the shared relation."""
-
     name: str
     atoms: tuple[Atom, ...]
     join_on: tuple[str, ...] = ()
@@ -73,12 +56,6 @@ class Query:
         return frozenset().union(*(a.read_columns for a in self.atoms)) | set(self.join_on)
 
     def static_cells(self) -> frozenset[tuple[str, str]] | None:
-        """The cells this query reads, when they do not depend on the values.
-
-        True for a query pinned to known rows without constant predicates,
-        which is what an agent working tuple by tuple issues.  It lets the
-        coordinator take the provenance without evaluating anything.
-        """
         cells: set[tuple[str, str]] = set()
         for atom in self.atoms:
             if atom.rows is None or atom.selections:
@@ -89,7 +66,6 @@ class Query:
 
     @property
     def sql(self) -> str:
-        """The text a client uploads.  Join attributes count as read."""
         parts = []
         for i, atom in enumerate(self.atoms):
             cols = ", ".join(f"t{i}.{c}" for c in sorted(atom.read_columns | set(self.join_on)))
@@ -109,20 +85,12 @@ Answer = tuple[tuple[Value, ...], ...]
 
 @dataclass(frozen=True)
 class Evidence:
-    """Query answers a client cached, compared as sorted bags (A3)."""
-
     answers: tuple[Answer, ...]
     provenance: frozenset[Cell] = frozenset()
 
 
 @dataclass(frozen=True)
 class Program:
-    """A deterministic repair program, kept at its client.
-
-    `kind` names a function in `recoord.programs`; `inputs` are the answer
-    positions it consumes.  `replayable` is the only part the server learns.
-    """
-
     kind: str
     targets: tuple[Cell, ...]
     options: dict[str, Any] = field(default_factory=dict)
@@ -131,8 +99,6 @@ class Program:
 
 @dataclass
 class Proposal:
-    """One version of one repair.  Versions of a repair share a `lineage`."""
-
     id: str
     client: str
     score: float
@@ -142,7 +108,7 @@ class Proposal:
     program: Program | None = None
     lineage: str = ""
     generation: int = 0
-    group: str = ""          # bundle key: one agent call over one DC group
+    group: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -173,7 +139,6 @@ class Proposal:
 
     @property
     def tiebreak(self) -> str:
-        """Content hash, so the order never depends on arrival (A4)."""
         blob = json.dumps(
             [self.lineage, self.generation, sorted((w.cell.row, w.cell.column, str(w.value)) for w in self.writes)],
             sort_keys=True,
@@ -183,8 +148,6 @@ class Proposal:
 
 @dataclass(frozen=True)
 class Violation:
-    """A witness on which every predicate of a DC holds."""
-
     constraint: str
     rows: tuple[str, ...]
     value_cells: frozenset[Cell]
@@ -192,7 +155,6 @@ class Violation:
 
 
 def compare(left: Value, op: str, right: Value) -> bool:
-    """Three-valued comparison: a predicate on NULL is not true (A5)."""
     if left is None or right is None:
         return False
     try:

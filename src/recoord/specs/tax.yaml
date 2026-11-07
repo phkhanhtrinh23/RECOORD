@@ -1,5 +1,3 @@
-# Raha/Baran layout: data/tax/{dirty.csv,clean.csv}.  200k tuples: use
-# --limit for a prefix, which is also how the size sweep works.
 name: tax
 kind: csv
 folder: tax

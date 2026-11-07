@@ -1,5 +1,3 @@
-"""Theorem 4.2 and the determinism claims, on the synthetic catalog."""
-
 from recoord.baselines import MERGES
 from recoord.checks import check_evidence_needed, check_guarantees, check_order_independence
 from recoord.coordinator import Coordinator, CoordinatorConfig

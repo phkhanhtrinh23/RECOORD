@@ -1,12 +1,3 @@
-"""Denial constraints, their violations, and the harmless-change rule.
-
-A DC is  forall t1 != t2: not(phi_1 and ... and phi_l), with each predicate
-comparing two attributes of the two tuples or an attribute with a constant.
-The equality predicates between the same attribute of both tuples define the
-DC's *groups*; the cells read by the remaining predicates are a witness's
-*value cells*.  An FD  lhs -> rhs  is sugar for one such DC.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -16,7 +7,7 @@ from typing import Any, Iterable, Sequence
 from .model import Cell, Value, Violation, compare
 from .table import Table, norm
 
-Term = tuple[str, str]  # ("t1" | "t2" | "const", attribute or literal)
+Term = tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -43,8 +34,8 @@ class Predicate:
 class DenialConstraint:
     name: str
     predicates: tuple[Predicate, ...]
-    kind: str = "dc"           # "fd" keeps the plurality rule of Section 3.3
-    rhs: str | None = None     # for FDs
+    kind: str = "dc"
+    rhs: str | None = None
 
     @property
     def key_columns(self) -> tuple[str, ...]:
@@ -56,12 +47,10 @@ class DenialConstraint:
 
     @property
     def arity(self) -> int:
-        """1 when no predicate mentions the second tuple: a per-tuple check."""
         mentions = {t[0] for p in self.predicates for t in (p.left, p.right)}
         return 1 if "t2" not in mentions else 2
 
     def side_predicates(self, alias: str) -> tuple[Predicate, ...]:
-        """Predicates that read only `alias`, so they filter one side alone."""
         out = []
         for pred in self.value_predicates:
             aliases = {t[0] for t in (pred.left, pred.right)} - {"const"}
@@ -116,8 +105,6 @@ def _term(raw: Any) -> Term:
     return ("const", raw)
 
 
-# -- violations -------------------------------------------------------------
-
 def _resolve(term: Term, t1: dict[str, Value], t2: dict[str, Value]) -> Value:
     if term[0] == "const":
         return norm(term[1])
@@ -142,19 +129,16 @@ def _witness(dc: DenialConstraint, i: str, ri: dict, j: str, rj: dict) -> Violat
 
 
 def groups(table: Table, dc: DenialConstraint) -> dict[tuple[Value, ...], list[str]]:
-    """Row ids per group of `dc`.  A NULL key cannot take part in a witness."""
     return table.groups(dc.key_columns)
 
 
 def violations(table: Table, constraints: Sequence[DenialConstraint],
                rows: Iterable[str] | None = None) -> list[Violation]:
-    """All witnesses, or only those touching `rows`."""
     return list(iter_violations(table, constraints, rows))
 
 
 def iter_violations(table: Table, constraints: Sequence[DenialConstraint],
                     rows: Iterable[str] | None = None):
-    """The same witnesses, one at a time, so a caller can stop early."""
     focus = None if rows is None else set(rows)
     for dc in constraints:
         if dc.arity == 1:
@@ -174,7 +158,6 @@ def iter_violations(table: Table, constraints: Sequence[DenialConstraint],
 
 def _unary_witnesses(table: Table, dc: DenialConstraint,
                      focus: set[str] | None) -> list[Violation]:
-    """A DC on one tuple is a per-row scan, not a join."""
     rows = table.row_ids if focus is None else [r for r in focus if r in table]
     out = []
     for rid in rows:
@@ -188,11 +171,6 @@ def _unary_witnesses(table: Table, dc: DenialConstraint,
 
 def _pair_witnesses(table: Table, dc: DenialConstraint, members: Sequence[str],
                     focus: set[str] | None) -> list[Violation]:
-    """Filter each side by the predicates that read it alone, then pair those.
-
-    Without the filter a DC whose value predicates all read one tuple would
-    enumerate the whole group against itself.
-    """
     left = [r for r in members if all(_holds(p, table.row(r), table.row(r))
                                       for p in dc.side_predicates("t1"))]
     right = [r for r in members if all(_holds(p, table.row(r), table.row(r))
@@ -216,7 +194,6 @@ def _pair_witnesses(table: Table, dc: DenialConstraint, members: Sequence[str],
 
 
 def _keys_of(table: Table, dc: DenialConstraint, index: dict, focus: set[str]) -> list[tuple]:
-    """Only the groups that `focus` reaches, found through the rows themselves."""
     seen: set[tuple] = set()
     for rid in focus:
         if rid in table:
@@ -228,7 +205,6 @@ def _keys_of(table: Table, dc: DenialConstraint, index: dict, focus: set[str]) -
 
 def _fd_witnesses(table: Table, dc: DenialConstraint, members: Sequence[str],
                   focus: set[str] | None) -> list[Violation]:
-    """An FD is violated by every pair of distinct non-NULL right-hand sides."""
     by_value: dict[Value, list[str]] = {}
     for rid in members:
         value = table.row(rid).get(dc.rhs)
@@ -253,12 +229,11 @@ def _fd_witnesses(table: Table, dc: DenialConstraint, members: Sequence[str],
 
 
 def count_in_group(table: Table, dc: DenialConstraint, row_id: str) -> int:
-    """How many witnesses of `dc` this row takes part in."""
     key = dc.key_of(table.row(row_id))
     if any(k is None for k in key):
         return 0
     members = groups(table, dc).get(key, [])
-    if dc.kind == "fd" and dc.rhs is not None:        # linear in the group
+    if dc.kind == "fd" and dc.rhs is not None:
         mine = table.row(row_id).get(dc.rhs)
         if mine is None:
             return 0
@@ -268,7 +243,6 @@ def count_in_group(table: Table, dc: DenialConstraint, row_id: str) -> int:
 
 
 def plurality(table: Table, dc: DenialConstraint, row_id: str) -> Value | None:
-    """The group's unique most frequent right-hand side, if there is one."""
     if dc.kind != "fd" or dc.rhs is None:
         return None
     key = dc.key_of(table.row(row_id))
@@ -283,7 +257,6 @@ def plurality(table: Table, dc: DenialConstraint, row_id: str) -> Value | None:
 
 
 def plurality_is_wrong(table: Table, truth: Table, constraints: Sequence[DenialConstraint]) -> float:
-    """Share omega of DC groups whose plurality value is wrong on this instance."""
     total = wrong = 0
     for dc in constraints:
         if dc.kind != "fd" or dc.rhs is None:
@@ -299,15 +272,8 @@ def plurality_is_wrong(table: Table, truth: Table, constraints: Sequence[DenialC
     return wrong / total if total else 0.0
 
 
-# -- the harmless / worsening rule (Section 3.3, test (iii)) ----------------
-
 def counts_before(table: Table, constraints: Sequence[DenialConstraint],
                   changed: Iterable[Cell]) -> dict[tuple[str, str], int]:
-    """How many witnesses each written tuple takes part in, per DC.
-
-    Taken on `D^{-r}` so that `worsens_from` can then read `D_T` without the
-    two instances existing at the same time.
-    """
     changed = list(changed)
     out: dict[tuple[str, str], int] = {}
     for dc in constraints:
@@ -320,7 +286,6 @@ def counts_before(table: Table, constraints: Sequence[DenialConstraint],
 def worsens_from(counts: dict[tuple[str, str], int], before_keys: dict[tuple[str, str], tuple],
                  after: Table, constraints: Sequence[DenialConstraint],
                  changed: Iterable[Cell]) -> bool:
-    """`worsens` with the `before` side already measured."""
     changed = list(changed)
     for dc in constraints:
         for row_id in sorted({c.row for c in changed if c.column in dc.columns}):
@@ -353,12 +318,6 @@ def keys_before(table: Table, constraints: Sequence[DenialConstraint],
 
 def worsens(before: Table, after: Table, constraints: Sequence[DenialConstraint],
             changed: Iterable[Cell]) -> bool:
-    """Does the change from `before` to `after` worsen a DC at a written tuple?
-
-    Harmless if the tuple is in no violation afterwards, or the DC is an FD and
-    the tuple's new right-hand side is its group's unique plurality, or the
-    tuple's group has fewer violations and any group it moves into gains none.
-    """
     changed = list(changed)
     for dc in constraints:
         touched = {c.row for c in changed if c.column in dc.columns}
@@ -387,7 +346,6 @@ def _moved_group_gains(before: Table, after: Table, dc: DenialConstraint, row_id
 
 
 def changed_cells(before: Table, after: Table) -> list[Cell]:
-    """The cells on which two instances differ."""
     out = []
     for rid, row in after.rows():
         old = before.row(rid) if rid in before else {}
@@ -399,11 +357,6 @@ def changed_cells(before: Table, after: Table) -> list[Cell]:
 
 def affected_rows(table: Table, constraints: Sequence[DenialConstraint],
                   changed: Sequence[Cell]) -> set[str]:
-    """Every row of a DC group in which one of `changed` moved a value.
-
-    Test (iii) and (V4) are decided here and nowhere else: a group no patch
-    touched keeps whatever D_0 gave it.
-    """
     rows = {c.row for c in changed}
     for dc in constraints:
         touched = [c for c in changed if c.column in dc.columns]
@@ -418,13 +371,6 @@ def affected_rows(table: Table, constraints: Sequence[DenialConstraint],
 
 def adopts(table: Table, constraints: Sequence[DenialConstraint], protected: frozenset[Cell],
            rows: Iterable[str] | None = None) -> bool:
-    """Is some residual violation made only of protected value cells?
-
-    (V4) forbids this, so the NULL patch always has a cell it may erase.  An FD
-    answers it in one pass over each group: two protected right-hand sides with
-    different values are a protected witness, and there is no need to form the
-    pairs.
-    """
     focus = None if rows is None else set(rows)
     for dc in constraints:
         if dc.kind == "fd" and dc.rhs is not None and dc.arity == 2:

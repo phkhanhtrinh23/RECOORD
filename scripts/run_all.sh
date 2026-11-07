@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
-# Everything end to end: install, test, self-checks, runs, sweeps, report.
-#
-#   ./scripts/run_all.sh              # synthetic data only, a few minutes
-#   ./scripts/run_all.sh --full       # also the CSV benchmarks in data/, 5 runs each
-#   ./scripts/run_all.sh --quick      # smoke test only
-#
-# Options: OUT=<dir> SEEDS=<n> LIMIT=<rows> AGENT=simulated|llm|rules
+# Runs everything: install, tests, self-checks, datasets, sweeps, report.
+# Usage: ./scripts/run_all.sh [--quick | --full]
+#        OUT=<dir> SEEDS=<n> LIMIT=<rows> AGENT=offline|llm|rules ./scripts/run_all.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODE="${1:-}"
 OUT="${OUT:-results}"
-AGENT="${AGENT:-simulated}"
+AGENT="${AGENT:-offline}"
 case "$MODE" in
   --quick) SEEDS="${SEEDS:-1}"; LIMIT="${LIMIT:-60}";  SWEEPS=(ablation) ;;
-  --full)  SEEDS="${SEEDS:-5}"; LIMIT="${LIMIT:-0}";   SWEEPS=(policies ablation central calibration clients errors waves failures budget departure partition agents size) ;;
-  *)       SEEDS="${SEEDS:-3}"; LIMIT="${LIMIT:-400}"; SWEEPS=(policies ablation central calibration waves failures budget) ;;
+  --full)  SEEDS="${SEEDS:-5}"; LIMIT="${LIMIT:-0}";   SWEEPS=(policies ablation central calibration clients errors waves failures budget departure joining constraints sharding partition agents size) ;;
+  *)       SEEDS="${SEEDS:-3}"; LIMIT="${LIMIT:-400}"; SWEEPS=(policies ablation central calibration waves failures budget sharding constraints joining) ;;
 esac
 
 PY=.venv/bin/python

@@ -1,12 +1,3 @@
-"""Command line: `recoord <command>`.
-
-    recoord datasets                  list the dataset specs
-    recoord run catalog               merge one dataset with several policies
-    recoord sweep clients catalog     one parameter sweep
-    recoord report results/           aggregate what has been written
-    recoord check                     the self-checks of the paper's propositions
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -24,9 +15,18 @@ from . import sweeps
 
 GROUPS = {"policies": POLICIES, "ablation": ABLATIONS, "central": CENTRAL, "all": sorted(MERGES)}
 
+USAGE = """merge repairs proposed by independent data agents
+
+  recoord datasets                  list the dataset specs
+  recoord run catalog               merge one dataset, compare policies
+  recoord sweep clients catalog     vary one parameter
+  recoord report results/           aggregate what has been written
+  recoord check                     run the self-checks
+"""
+
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="recoord", description=__doc__,
+    parser = argparse.ArgumentParser(prog="recoord", description=USAGE,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -55,7 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             help="paired bootstrap of recoord against this method")
     report_cmd.add_argument("--csv", default=None)
 
-    check_cmd = sub.add_parser("check", help="self-checks of the claims")
+    check_cmd = sub.add_parser("check", help="verify the merge guarantees by enumeration")
     check_cmd.add_argument("--limit", type=int, default=60)
 
     args = parser.parse_args(argv)
@@ -76,7 +76,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", default="data", help="where the CSV benchmarks live")
     parser.add_argument("--out", default="results")
-    parser.add_argument("--agent", default="simulated", choices=["simulated", "llm", "rules"])
+    parser.add_argument("--agent", default="offline", choices=["offline", "llm", "rules"],
+                        help="where judgement steps come from")
     parser.add_argument("--model", default="claude-opus-5")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None, help="use only the first N rows")
@@ -90,6 +91,11 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fail-rate", type=float, default=0.0)
     parser.add_argument("--retries", type=int, default=0)
     parser.add_argument("--waves", type=int, default=1)
+    parser.add_argument("--shards", type=int, default=1,
+                        help="workers over disjoint components")
+    parser.add_argument("--late-constraint", type=int, default=None,
+                        help="index of a DC that arrives after the merge")
+    parser.add_argument("--joining", default=None, help="a client that joins a running merge")
     parser.add_argument("--freeze", default=None, help="a client that leaves mid-merge")
     parser.add_argument("--recalibrate", action="store_true")
     parser.add_argument("--quiet", action="store_true")
@@ -144,8 +150,9 @@ def _sweep(args: argparse.Namespace) -> int:
 
 def _sweep_columns(name: str, rows: Sequence[dict[str, Any]]) -> list[str]:
     knobs = [k for k in ("clients", "rows", "error_rate", "cap", "fail_rate", "retries",
-                         "waves", "departed", "layout", "agent_kind", "model", "seed_index",
-                         "recalibrated", "study") if any(k in r for r in rows)]
+                         "waves", "shards", "late_constraint", "joined", "departed", "layout",
+                         "agent_kind", "model", "seed_index", "recalibrated", "study")
+             if any(k in r for r in rows)]
     quality = [k for k in ("f1", "f1_seen", "f1_held_out") if any(k in r for r in rows)]
     return ["dataset", "method", *knobs, *quality, "stale", "violations", "null_cells",
             "llm_calls", "replay_calls", "tokens", "seconds"]
@@ -168,7 +175,6 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _check(args: argparse.Namespace) -> int:
-    """Run the enumeration checks: no stale repair, no violation, fed == central."""
     from .checks import run_checks
     failures = run_checks(limit=args.limit)
     for line in failures["lines"]:

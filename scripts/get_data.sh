@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Fetch the public CSV benchmarks into data/<name>/{dirty.csv,clean.csv}.
-#
-#   ./scripts/get_data.sh            # all of them
-#   ./scripts/get_data.sh hospital   # just one
-#
-# These come from the Baran repository. Tax is large; skip it with SKIP_TAX=1.
+# Fetches the public CSV benchmarks into data/<name>/{dirty.csv,clean.csv}.
+# Usage: ./scripts/get_data.sh [name ...]      SKIP_TAX=1 to leave out the big one
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

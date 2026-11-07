@@ -1,10 +1,3 @@
-"""A BART-style error generator.
-
-Errors come in *types*; a run can hold some types out of the development split
-so that the agents meet patterns no rule anticipated.  Every injection is
-recorded, so quality can be reported per type.
-"""
-
 from __future__ import annotations
 
 import random
@@ -25,8 +18,6 @@ def error_type(name: str) -> Callable[[Mutator], Mutator]:
         return fn
     return wrap
 
-
-# -- seen types -------------------------------------------------------------
 
 @error_type("typo")
 def _typo(value: Value, rng: random.Random, opts: dict) -> Value:
@@ -50,23 +41,18 @@ def _format(value: Value, rng: random.Random, opts: dict) -> Value:
 
 @error_type("swap")
 def _swap(value: Value, rng: random.Random, opts: dict) -> Value:
-    """A value from elsewhere in the same column."""
     pool = [v for v in opts.get("column_values", []) if v is not None and v != value]
     return rng.choice(pool) if pool else value
 
 
 @error_type("dependency")
 def _dependency(value: Value, rng: random.Random, opts: dict) -> Value:
-    """A value copied from another tuple of the same DC group."""
     pool = [v for v in opts.get("group_values", []) if v is not None and v != value]
     return rng.choice(pool) if pool else _typo(value, rng, opts)
 
 
-# -- held-out types ---------------------------------------------------------
-
 @error_type("U1")
 def _dropped_decimal_comma(value: Value, rng: random.Random, opts: dict) -> Value:
-    """330 -> 33: a decimal comma read as a thousands separator."""
     try:
         number = float(str(value))
     except (TypeError, ValueError):
@@ -76,7 +62,6 @@ def _dropped_decimal_comma(value: Value, rng: random.Random, opts: dict) -> Valu
 
 @error_type("U2")
 def _unit_confusion(value: Value, rng: random.Random, opts: dict) -> Value:
-    """A pack size or a unit taken for the other: 330 ml -> 0.33, or x6."""
     try:
         number = float(str(value))
     except (TypeError, ValueError):
@@ -88,12 +73,9 @@ def _unit_confusion(value: Value, rng: random.Random, opts: dict) -> Value:
 
 @error_type("U3")
 def _other_locale(value: Value, rng: random.Random, opts: dict) -> Value:
-    """A categorical value written in another locale's language."""
     table = opts.get("locale", {})
     return table.get(str(value), str(value) + " (DE)")
 
-
-# -- the generator ----------------------------------------------------------
 
 @dataclass
 class Injection:
@@ -115,7 +97,6 @@ class ErrorPlan:
 
 
 def inject(clean: Table, plan: ErrorPlan, seed: int = 0) -> tuple[Table, list[Injection]]:
-    """Corrupt `rate` of the cells of `plan.columns` and record every change."""
     rng = random.Random(seed)
     dirty = clean.copy()
     columns = list(plan.columns or clean.columns)
@@ -169,7 +150,6 @@ def _write(cell: Cell, value: Value):
 
 
 def buckets(log: Sequence[Injection]) -> dict[str, list[Cell]]:
-    """Cells per error type, plus `seen` and `held_out`."""
     out: dict[str, list[Cell]] = {}
     for item in log:
         out.setdefault(item.kind, []).append(item.cell)

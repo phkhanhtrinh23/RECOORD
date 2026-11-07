@@ -1,11 +1,3 @@
-"""Deterministic repair programs.
-
-A program lives at its client, reads only its proposal's evidence answers and
-its client's private tables, and recomputes the patch.  Registering a kind here
-makes it replayable: given fresh answers, the coordinator can ask the client to
-re-run it instead of paying for an LLM call.  Programs never call a model.
-"""
-
 from __future__ import annotations
 
 import re
@@ -35,7 +27,6 @@ def precondition(name: str) -> Callable:
 
 
 def holds(spec: Program, answers: tuple[Answer, ...], private: dict[str, Any] | None = None) -> bool:
-    """`pre_r`: a Boolean test on the evidence answers."""
     test = PRECONDITIONS.get(spec.kind)
     if test is None:
         return bool(answers) and bool(answers[0])
@@ -43,7 +34,6 @@ def holds(spec: Program, answers: tuple[Answer, ...], private: dict[str, Any] | 
 
 
 def run(spec: Program, answers: tuple[Answer, ...], private: dict[str, Any] | None = None) -> list[Write] | None:
-    """`P_r(Q_r(D))`, or None when the program does not apply."""
     fn = PROGRAMS.get(spec.kind)
     if fn is None:
         raise KeyError(f"no program registered for {spec.kind!r}")
@@ -53,10 +43,7 @@ def run(spec: Program, answers: tuple[Answer, ...], private: dict[str, Any] | No
         return None
 
 
-# -- helpers ---------------------------------------------------------------
-
 def _cells(answers: tuple[Answer, ...]) -> list[Value]:
-    """Flatten the answers in the order the client passed them (A3)."""
     return [value for answer in answers for row in answer for value in row]
 
 
@@ -72,8 +59,6 @@ def _number(value: Value) -> Decimal:
 def _tidy(value: Decimal) -> str:
     return str(int(value)) if value == value.to_integral() else format(value.normalize(), "f")
 
-
-# -- arithmetic derivations ------------------------------------------------
 
 @precondition("product")
 @precondition("sum")
@@ -114,15 +99,12 @@ def _concat(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[W
     return [Write(spec.targets[0], sep.join(str(v) for v in _cells(answers) if v is not None))]
 
 
-# -- normalisation ---------------------------------------------------------
-
 UNITS = {"ml": Decimal(1), "cl": Decimal(10), "l": Decimal(1000), "g": Decimal(1), "kg": Decimal(1000)}
 _QUANTITY = re.compile(r"(\d+(?:[.,]\d+)?)\s*(ml|cl|l|kg|g)\b", re.IGNORECASE)
 
 
 @program("locale_quantity")
 def _locale_quantity(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """Read a quantity written in another locale: "0,33 L je Flasche" -> 330."""
     text = " ".join(str(v) for v in _cells(answers) if v is not None)
     matches = _QUANTITY.findall(text.lower())
     if not matches:
@@ -141,7 +123,6 @@ def _has_quantity(spec: Program, answers: tuple[Answer, ...], private: dict) -> 
 
 @program("pack_size")
 def _pack_size(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """Read a pack count: "6 x 330 ml" -> 6."""
     text = " ".join(str(v) for v in _cells(answers) if v is not None).lower()
     match = re.search(r"(\d+)\s*(?:x|er[- ]pack|-pack|pack)", text)
     return [Write(spec.targets[0], match.group(1))] if match else None
@@ -161,7 +142,6 @@ _NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
 
 @program("number")
 def _number_only(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """Read the number out of a unit-laden field: "12.0 oz." -> 12, "0.05%" -> 0.05."""
     text = " ".join(str(v) for v in _cells(answers) if v is not None)
     match = _NUMBER.search(text)
     if not match:
@@ -180,7 +160,6 @@ def _has_number(spec: Program, answers: tuple[Answer, ...], private: dict) -> bo
 
 @program("drop_suffix")
 def _drop_suffix(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """Cut a trailing part that belongs in another column: "Madison WI" -> "Madison"."""
     values = _cells(answers)
     if not values or values[0] is None:
         return None
@@ -198,7 +177,6 @@ def _has_suffix(spec: Program, answers: tuple[Answer, ...], private: dict) -> bo
 
 @program("blank")
 def _blank(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """Turn a placeholder for a missing value into a real NULL."""
     markers = {str(m).lower() for m in spec.options.get("markers", ["n/a", "na", "null", "-", "?"])}
     values = _cells(answers)
     if not values or values[0] is None or str(values[0]).strip().lower() not in markers:
@@ -213,7 +191,6 @@ def _is_blank_marker(spec: Program, answers: tuple[Answer, ...], private: dict) 
 
 @program("lookup")
 def _lookup(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """Translate a value through a private table the client never uploads (A2)."""
     table = private.get(spec.options.get("table", ""), {})
     key = str(_cells(answers)[0]).strip().lower()
     value = table.get(key)
@@ -229,7 +206,6 @@ def _in_lookup(spec: Program, answers: tuple[Answer, ...], private: dict) -> boo
 
 @program("plurality")
 def _plurality(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """The majority value of the answer, which a group repair reads."""
     counts = Counter(v for v in _cells(answers) if v is not None)
     ranked = counts.most_common(2)
     if not ranked or (len(ranked) > 1 and ranked[0][1] == ranked[1][1]):
@@ -244,6 +220,5 @@ def _has_plurality(spec: Program, answers: tuple[Answer, ...], private: dict) ->
 
 @program("constant")
 def _constant(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
-    """An LLM judgment frozen into a value: present, but not replayable."""
     values = spec.options.get("values", [])
     return [Write(t, v) for t, v in zip(spec.targets, values)]

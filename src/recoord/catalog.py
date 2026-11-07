@@ -1,12 +1,3 @@
-"""A synthetic multi-vendor product catalog.
-
-The WDC Products offers used in the paper are not redistributable, so this
-builds a catalog with the same shape: one clean product per GTIN, several
-vendors offering it, and a per-vendor feed format.  The point of the dataset is
-that a pack total is *derived* from a per-item volume, so repairing the volume
-makes a derivation stale -- which is what the coordination problem is about.
-"""
-
 from __future__ import annotations
 
 import random
@@ -41,7 +32,6 @@ class CatalogSpec:
 
 
 def build(spec: CatalogSpec) -> Table:
-    """A clean catalog: `offers` rows over `products` products and `vendors` feeds."""
     rng = random.Random(spec.seed)
     brands = [f"Brand{chr(65 + i)}" for i in range(12)]
     vendors = [f"v{i:02d}" for i in range(spec.vendors)]
@@ -64,7 +54,7 @@ def build(spec: CatalogSpec) -> Table:
     rows = []
     for offer in range(spec.offers):
         product = products[offer % len(products)]
-        # Every vendor gets its own feed format; early offers cover all vendors.
+
         vendor = vendors[offer % len(vendors)] if offer < len(vendors) else rng.choice(vendors)
         total = product["unit_volume_ml"] * product["pack_size"]
         rows.append({
@@ -106,7 +96,6 @@ def _description(product: dict[str, Any], style: str) -> str:
 
 
 def private_tables(seed: int = 0) -> dict[str, dict[str, str]]:
-    """Per-client lookup tables that a program reads but never uploads (A2)."""
     return {
         "locale_category": {v.lower(): k for k, v in LOCALE.items()},
         "currency": {"de": "EUR", "at": "EUR", "nl": "EUR", "fr": "EUR", "gb": "GBP"},

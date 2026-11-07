@@ -1,16 +1,3 @@
-"""Other ways to merge the same proposals, and centralised references.
-
-Three families:
-
-* *merge policies* that accept or reject the uploaded proposals in arrival
-  order -- cell-wise registers, the usual concurrency-control validations, and
-  transaction repair with value-based validation;
-* *variants* of Algorithm 1 that differ only in what they do when a proposal
-  may be stale (they are what Proposition 4.5 compares against);
-* *central references* that schedule the agents themselves instead of merging
-  what they uploaded.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -38,7 +25,6 @@ def _report(name: str, base: Table, table: Table, members: Sequence[Proposal],
 
 
 def _stale(base: Table, final: Table, members: Sequence[Proposal]) -> int:
-    """A member is stale if its evidence moved on the output without its patch."""
     owners: dict[Cell, int] = {}
     for member in members:
         for cell in member.write_cells:
@@ -52,10 +38,7 @@ def _stale(base: Table, final: Table, members: Sequence[Proposal]) -> int:
     return count
 
 
-# == merge policies =========================================================
-
 def last_writer_wins(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, **_: Any) -> Report:
-    """A last-writer-wins register per cell: blind to evidence (Prop. 4.7)."""
     table = base.copy()
     for proposal in pool:
         table.apply(proposal.writes)
@@ -63,7 +46,6 @@ def last_writer_wins(base: Table, pool: Sequence[Proposal], constraints, fleet: 
 
 
 def occ_write(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, **_: Any) -> Report:
-    """Write-set validation: rejects overlapping writes, ignores reads."""
     table, taken, written = base.copy(), [], set()
     for proposal in pool:
         if proposal.write_cells & written:
@@ -75,7 +57,6 @@ def occ_write(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, 
 
 
 def ssi(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, **_: Any) -> Report:
-    """Serialisable snapshot isolation: abort on a read-write dependency cycle."""
     table, taken, aborts = base.copy(), [], 0
     written: set[Cell] = set()
     for proposal in pool:
@@ -92,7 +73,6 @@ def ssi(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, **_: A
 
 
 def det_order(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, **_: Any) -> Report:
-    """Deterministic ordering: a fixed sequence, no validation."""
     order = sorted(pool, key=lambda p: p.tiebreak)
     table = base.copy()
     for proposal in order:
@@ -102,7 +82,6 @@ def det_order(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, 
 
 def fixpoint_holistic(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
                       rounds: int = 5, **_: Any) -> Report:
-    """Re-run every program to a fixpoint, then repair DCs by majority."""
     table = base.copy()
     members = [replace(p) for p in pool]
     for proposal in members:
@@ -143,13 +122,6 @@ def _holistic_repair(table: Table, constraints: Sequence[DenialConstraint], roun
 
 def trvv(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
          dc_check: bool = True, **_: Any) -> Report:
-    """Transaction repair with value-based validation, in arrival order.
-
-    Bayou's check-and-merge with a currency check and regeneration: a stale
-    reader re-executes its program, or is re-prompted, or aborts.  No commit
-    protocol defines a DC test, so with `dc_check` a merge that leaves a new
-    violation aborts at commit.
-    """
     table, taken = base.copy(), []
     aborts = replays = regens = 0
     for proposal in pool:
@@ -177,21 +149,36 @@ def trvv(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
                    {"aborts": aborts, "replayed": replays, "regenerated": regens})
 
 
-# == variants of Algorithm 1 ================================================
-
 def recoord(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
             config: CoordinatorConfig | None = None, name: str = "recoord",
-            waves: int = 1, **_: Any) -> Report:
+            waves: int = 1, shards: int = 1, late_constraints: Sequence[Any] = (),
+            joining: Sequence[Proposal] = (), **_: Any) -> Report:
     coordinator = Coordinator(base, constraints, fleet, config or CoordinatorConfig())
     if waves <= 1:
-        report = coordinator.merge(pool)
+        report = coordinator.merge(pool, shards=shards)
     else:
         size = (len(pool) + waves - 1) // max(1, waves)
         for start in range(0, len(pool), max(1, size)):
-            report = coordinator.merge(pool[start:start + size])
+            report = coordinator.merge(pool[start:start + size], shards=shards)
+    if joining:
+        report = coordinator.merge(list(joining), shards=shards)
+    if late_constraints:
+        report = coordinator.add_constraints(list(late_constraints))
     report.stats["method"] = name
     report.stats["graph_components"] = len(coordinator.graph.components())
     return report
+
+
+def _ignore_extras(fn: Callable[..., Report]) -> Callable[..., Report]:
+    def run(base, pool, constraints, fleet, **kw):
+        pool = list(pool) + list(kw.pop("joining", ()) or ())
+        late = list(kw.pop("late_constraints", ()) or ())
+        kw.pop("shards", None)
+        kw.pop("waves", None)
+        return fn(base, pool, list(constraints) + late, fleet, **kw)
+    run.__name__ = getattr(fn, "__name__", "policy")
+    run.__doc__ = fn.__doc__
+    return run
 
 
 def _variant(name: str, **flags: Any) -> Callable[..., Report]:
@@ -202,14 +189,11 @@ def _variant(name: str, **flags: Any) -> Callable[..., Report]:
     return run
 
 
-# OCC-RV re-derives every reader of a candidate edge; IVM-Regen confirms by
-# delta query but regenerates instead of replaying; OCC-Replay re-executes
-# every reader's program and re-prompts the others.
 occ_rv = _variant("occ-rv", use_replay=False, always_regenerate=True)
 ivm_regen = _variant("ivm-regen", use_replay=False)
 occ_replay = _variant("occ-replay", use_retests=False)
 
-# Ablations of Algorithm 1.
+
 ablation_no_invalidation = _variant("no-invalidation", use_invalidation=False)
 ablation_no_replay = _variant("no-replay", use_replay=False)
 ablation_no_dc = _variant("no-dc-test", use_dc_test=False, use_null_patch=False)
@@ -218,21 +202,20 @@ ablation_no_retest = _variant("no-retests", use_retests=False)
 ablation_uniform = _variant("uniform-scores", score_order=False)
 
 
-# == central references =====================================================
-
-def single_agent(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet, **_: Any) -> Report:
-    """One agent does everything: only the first client's proposals exist."""
-    if not pool:
-        return _report("single-agent", base, base.copy(), [], constraints, fleet)
-    owner = sorted({p.client for p in pool})[0]
-    report = last_writer_wins(base, [p for p in pool if p.client == owner], constraints, fleet)
-    report.stats["method"] = "single-agent"
-    return report
+def single_agent(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
+                 **_: Any) -> Report:
+    table, taken, written = base.copy(), [], set()
+    for proposal in sorted(pool, key=lambda p: p.tiebreak):
+        if proposal.write_cells & written:
+            continue
+        table.apply(proposal.writes)
+        written |= set(proposal.write_cells)
+        taken.append(replace(proposal, client="single"))
+    return _report("single-agent", base, table, taken, constraints, fleet)
 
 
 def serial(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
            rounds: int = 1, **_: Any) -> Report:
-    """A fixed client order, once or to a fixpoint (at most `rounds` passes)."""
     clients = sorted({p.client for p in pool})
     table, taken = base.copy(), []
     for _pass in range(max(1, rounds)):
@@ -256,7 +239,6 @@ def serial(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
 
 def debate(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
            rounds: int = 2, **_: Any) -> Report:
-    """Per cell, the agents argue and the highest total confidence wins."""
     table, taken = base.copy(), []
     by_cell: dict[Cell, list[Proposal]] = {}
     for proposal in pool:
@@ -275,13 +257,6 @@ def debate(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
 
 def sequencing_planner(base: Table, pool: Sequence[Proposal], constraints, fleet: Fleet,
                        config: CoordinatorConfig | None = None, **_: Any) -> Report:
-    """An orchestrator runs the clients one at a time, writers first.
-
-    Each step's proposals are admitted by Algorithm 1's tests, so most
-    invalidations never arise -- at the price of telling every client when to
-    start, and of a planner that would need their private tables to run the
-    agents itself.
-    """
     cfg = config or CoordinatorConfig()
     coordinator = Coordinator(base, constraints, fleet, cfg)
     order = _plan(pool)
@@ -294,7 +269,6 @@ def sequencing_planner(base: Table, pool: Sequence[Proposal], constraints, fleet
 
 
 def _plan(pool: Sequence[Proposal]) -> list[str]:
-    """Writers before readers: a client is early if others read what it writes."""
     clients = sorted({p.client for p in pool})
     reads: dict[str, set[str]] = {c: set() for c in clients}
     writes: dict[str, set[str]] = {c: set() for c in clients}
@@ -307,27 +281,27 @@ def _plan(pool: Sequence[Proposal]) -> list[str]:
 
 MERGES: dict[str, Callable[..., Report]] = {
     "recoord": recoord,
-    "lww": last_writer_wins,
-    "occ-write": occ_write,
-    "ssi": ssi,
-    "det-order": det_order,
-    "fixpoint-holistic": fixpoint_holistic,
-    "trvv": trvv,
-    "trvv-nodc": lambda *a, **k: trvv(*a, **{**k, "dc_check": False}),
     "occ-rv": occ_rv,
     "ivm-regen": ivm_regen,
     "occ-replay": occ_replay,
-    "single-agent": single_agent,
-    "serial": serial,
-    "serial-fixpoint": lambda *a, **k: serial(*a, **{**k, "rounds": 5}),
-    "debate": debate,
-    "sequencing-planner": sequencing_planner,
     "no-invalidation": ablation_no_invalidation,
     "no-replay": ablation_no_replay,
     "no-dc-test": ablation_no_dc,
     "no-null-patch": ablation_no_null,
     "no-retests": ablation_no_retest,
     "uniform-scores": ablation_uniform,
+    "lww": _ignore_extras(last_writer_wins),
+    "occ-write": _ignore_extras(occ_write),
+    "ssi": _ignore_extras(ssi),
+    "det-order": _ignore_extras(det_order),
+    "fixpoint-holistic": _ignore_extras(fixpoint_holistic),
+    "trvv": _ignore_extras(trvv),
+    "trvv-nodc": _ignore_extras(lambda *a, **k: trvv(*a, **{**k, "dc_check": False})),
+    "single-agent": _ignore_extras(single_agent),
+    "serial": _ignore_extras(serial),
+    "serial-fixpoint": _ignore_extras(lambda *a, **k: serial(*a, **{**k, "rounds": 5})),
+    "debate": _ignore_extras(debate),
+    "sequencing-planner": _ignore_extras(sequencing_planner),
 }
 
 ABLATIONS = ["recoord", "no-invalidation", "no-replay", "no-dc-test", "no-null-patch",

@@ -1,11 +1,3 @@
-"""Running one configuration end to end.
-
-The clients' agents are run **once**; every merge policy then gets the same
-pool of uploaded proposals, so the comparison is about merging and not about
-sampling.  Each policy runs against a fresh fleet whose call log starts from
-the shared cost of those initial agent calls.
-"""
-
 from __future__ import annotations
 
 import json
@@ -31,21 +23,24 @@ class RunConfig:
     root: str = "data"
     out: str = "results"
     methods: tuple[str, ...] = tuple(POLICIES)
-    agent: str = "simulated"            # simulated | llm | rules
+    agent: str = "offline"
     model: str = "claude-opus-5"
     seed: int = 0
     limit: int | None = None
     split: str = "test"
     error_rate: float | None = None
     threshold: float = 0.5
-    cap: int = 2                        # gamma
-    clients: int | None = None          # cap the number of clients
-    partition: str | None = None        # column that owns the rows
-    row_share: float = 1.0              # partial copies
+    cap: int = 2
+    clients: int | None = None
+    partition: str | None = None
+    row_share: float = 1.0
     fail_rate: float = 0.0
     retries: int = 0
     waves: int = 1
-    freeze: str | None = None           # a client that leaves after round one
+    shards: int = 1
+    late_constraint: int | None = None
+    joining: str | None = None
+    freeze: str | None = None
     recalibrate: bool = False
     analyse: bool = False
     analyse_limit: int = 10
@@ -55,8 +50,6 @@ class RunConfig:
     def coordinator(self) -> CoordinatorConfig:
         return CoordinatorConfig(threshold=self.threshold, regeneration_cap=self.cap)
 
-
-# -- fleet construction -----------------------------------------------------
 
 def make_clients(dataset: Dataset, cfg: RunConfig) -> list[Client]:
     specs = _team(dataset.clients, cfg.clients)
@@ -76,7 +69,6 @@ def make_clients(dataset: Dataset, cfg: RunConfig) -> list[Client]:
 
 
 def _team(specs: Sequence[ClientSpec], size: int | None) -> list[ClientSpec]:
-    """A team of `size` clients, reusing the roles when more are asked for."""
     specs = list(specs)
     if not size or not specs:
         return specs
@@ -98,7 +90,7 @@ def _agent(cfg: RunConfig, spec: ClientSpec, dataset: Dataset, rules: Sequence[R
                            private=dataset.private if spec.private else {})
     if cfg.agent == "rules":
         return build_agent("rules", spec.name, rules, seed=seed)
-    return build_agent("simulated", spec.name, rules, seed=seed, reference=dataset.clean,
+    return build_agent("offline", spec.name, rules, seed=seed, reference=dataset.clean,
                        accuracy=spec.accuracy, jitter=spec.jitter,
                        private=dataset.private if spec.private else {})
 
@@ -113,7 +105,6 @@ def _rows_for(dataset: Dataset, spec: ClientSpec, cfg: RunConfig, index: int) ->
 
 
 def _partitioned_specs(dataset: Dataset, specs: Sequence[ClientSpec], column: str) -> list[ClientSpec]:
-    """One client per value of `column`, each owning its own rows."""
     values = sorted({row.get(column) for _, row in dataset.dirty.rows() if row.get(column)})
     rules = tuple(r.name for spec in specs for r in dataset.rules_for(spec))
     return [ClientSpec(name=f"{column}={v}", rules=rules, role="normalizer",
@@ -125,10 +116,7 @@ def owned_rows(dataset: Dataset, column: str, value: Any) -> tuple[str, ...]:
     return tuple(rid for rid, row in dataset.dirty.rows() if row.get(column) == value)
 
 
-# -- the pool ---------------------------------------------------------------
-
 def collect(dataset: Dataset, cfg: RunConfig) -> tuple[list[Proposal], CallLog, list[Client]]:
-    """Run every client's agent once and take its uploads."""
     clients = make_clients(dataset, cfg)
     if cfg.partition:
         for client in clients:
@@ -141,7 +129,6 @@ def collect(dataset: Dataset, cfg: RunConfig) -> tuple[list[Proposal], CallLog, 
 
 
 def fresh_fleet(dataset: Dataset, cfg: RunConfig, start: CallLog) -> Fleet:
-    """A fleet with reset client copies and the shared initial-call cost."""
     clients = make_clients(dataset, cfg)
     if cfg.partition:
         for client in clients:
@@ -153,12 +140,14 @@ def fresh_fleet(dataset: Dataset, cfg: RunConfig, start: CallLog) -> Fleet:
     return fleet
 
 
-# -- one run ----------------------------------------------------------------
-
 def run(cfg: RunConfig, dataset: Dataset | None = None) -> dict[str, Any]:
     dataset = dataset or load(cfg.dataset, root=cfg.root, seed=cfg.seed, limit=cfg.limit,
                               split=cfg.split, error_rate=cfg.error_rate)
     pool, initial, _clients = collect(dataset, cfg)
+    late_pool: list[Proposal] = []
+    if cfg.joining:
+        late_pool = [p for p in pool if p.client == cfg.joining]
+        pool = [p for p in pool if p.client != cfg.joining]
     maps = None
     if cfg.recalibrate and dataset.clean is not None:
         maps = fit(label(pool, dataset.dirty, dataset.clean))
@@ -171,8 +160,10 @@ def run(cfg: RunConfig, dataset: Dataset | None = None) -> dict[str, Any]:
         fleet = fresh_fleet(dataset, cfg, initial)
         config = replace(cfg.coordinator, recalibrate=maps)
         started = time.perf_counter()
-        report = MERGES[method](dataset.dirty, pool, dataset.constraints, fleet,
-                                config=config, waves=cfg.waves)
+        constraints, late = _split_constraints(dataset, cfg)
+        report = MERGES[method](dataset.dirty, pool, constraints, fleet, config=config,
+                                waves=cfg.waves, shards=cfg.shards, late_constraints=late,
+                                joining=late_pool)
         seconds = time.perf_counter() - started
         row = summarise(method, dataset.name, report, dataset.dirty, dataset.clean,
                         dataset.constraints, seconds, dataset.buckets)
@@ -200,11 +191,17 @@ def run(cfg: RunConfig, dataset: Dataset | None = None) -> dict[str, Any]:
     return {"dataset": dataset.name, "config": _config_dict(cfg), "rows": rows, **extras}
 
 
+def _split_constraints(dataset: Dataset, cfg: RunConfig):
+    if cfg.late_constraint is None or not dataset.constraints:
+        return dataset.constraints, ()
+    index = cfg.late_constraint % len(dataset.constraints)
+    kept = [c for i, c in enumerate(dataset.constraints) if i != index]
+    return kept, (dataset.constraints[index],)
+
+
 def _config_dict(cfg: RunConfig) -> dict[str, Any]:
     return {k: (list(v) if isinstance(v, tuple) else v) for k, v in cfg.__dict__.items()}
 
-
-# -- writing results --------------------------------------------------------
 
 def write(result: dict[str, Any], out: str | Path, name: str | None = None) -> Path:
     folder = Path(out)

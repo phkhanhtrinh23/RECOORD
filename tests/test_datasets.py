@@ -12,7 +12,7 @@ from recoord.metrics import error_cells
 def test_every_shipped_spec_parses():
     for name in available():
         if name in ("demo", "catalog"):
-            continue        # the two that need no download
+            continue
         assert name
 
 

@@ -1,5 +1,3 @@
-# Raha/Baran layout: data/rayyan/{dirty.csv,clean.csv}
-# "jounral_abbreviation" is misspelt in the published header; kept as is.
 name: rayyan
 kind: csv
 folder: rayyan

@@ -37,4 +37,4 @@ def test_only_recoord_and_its_variants_are_clean(catalog):
 
 def test_the_planner_orders_writers_before_readers(demo):
     report = results(demo, ["sequencing-planner"])["sequencing-planner"]
-    assert report.stats["plan"][0] == "A"      # the normalizer others read from
+    assert report.stats["plan"][0] == "A"

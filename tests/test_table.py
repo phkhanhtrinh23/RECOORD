@@ -19,7 +19,7 @@ def test_selection_and_projection():
 
 def test_null_never_satisfies_a_predicate():
     q = Query("q", (Atom(columns=("id",), selections=(("b", "!=", "99"),)),))
-    assert len(table().answer(q)) == 2        # row 2 has a NULL b
+    assert len(table().answer(q)) == 2
 
 
 def test_answers_are_sorted_bags():

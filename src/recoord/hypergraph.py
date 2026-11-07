@@ -1,21 +1,3 @@
-"""The repair interference hypergraph (Section 4.1).
-
-Re-evaluating every evidence query after every patch would be wasteful, and
-which instance arises depends on a selection that has not been made yet.  The
-hypergraph therefore over-approximates interference from the uploads alone:
-
-* an *invalidation edge* r_i -> r_j marks a candidate, i.e. r_i writes a cell
-  of an attribute some atom of Q_{r_j} reads, in a tuple whose *envelope*
-  satisfies that atom's local selections;
-* a *write edge* marks a shared written cell;
-* *components* are the connected pieces of the relation that links proposals
-  sharing a written cell, an invalidation edge, or a reachable DC key.
-
-Candidates are confirmed lazily by a delta query (Lemma 4.1 says none is
-missed), and DC hyperedges are never enumerated: admission test (iii) finds
-exactly the ones a trial touches.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -25,22 +7,20 @@ from .constraints import DenialConstraint
 from .model import Cell, Proposal, Value
 from .table import Table
 
-WILDCARD = object()  # a replayable proposal may write any value
+WILDCARD = object()
 
 
 @dataclass
 class Hypergraph:
     proposals: dict[str, Proposal] = field(default_factory=dict)
-    invalidation: dict[str, set[str]] = field(default_factory=dict)   # writer -> readers
-    readers: dict[str, set[str]] = field(default_factory=dict)        # reader -> writers
+    invalidation: dict[str, set[str]] = field(default_factory=dict)
+    readers: dict[str, set[str]] = field(default_factory=dict)
     write_edges: dict[Cell, set[str]] = field(default_factory=dict)
-    _component: dict[str, str] = field(default_factory=dict)          # union-find parent
+    _component: dict[str, str] = field(default_factory=dict)
     _key_buckets: dict[tuple[str, tuple], set[str]] = field(default_factory=dict)
     _wild_buckets: dict[str, set[str]] = field(default_factory=dict)
 
-    # -- construction ------------------------------------------------------
     def add(self, proposal: Proposal, base: Table, constraints: Sequence[DenialConstraint]) -> None:
-        """Index one proposal (also used for a re-planned version)."""
         pid = proposal.lineage
         self.proposals[pid] = proposal
         self.invalidation.setdefault(pid, set())
@@ -75,7 +55,6 @@ class Hypergraph:
 
     def _candidate(self, writer: Proposal, reader: Proposal, base: Table,
                    written: dict[str, set[str]]) -> bool:
-        """Lemma 4.1's envelope test: free cells may take any value."""
         for cell in writer.write_cells:
             for query in reader.queries:
                 for atom in query.atoms:
@@ -90,9 +69,7 @@ class Hypergraph:
                         return True
         return False
 
-    # -- DC keys and components -------------------------------------------
     def reachable_keys(self, proposal: Proposal, base: Table, dc: DenialConstraint) -> set[tuple]:
-        """The keys a tuple can hold once any proposal's write lands on it."""
         touched = {c.row for c in proposal.write_cells if c.column in dc.columns}
         touched |= {c.row for q in proposal.queries for a in q.atoms for c in self._read_cells(q, a, base)
                     if c.column in dc.columns}
@@ -103,7 +80,7 @@ class Hypergraph:
             per_column: list[list[Value]] = []
             for column in dc.key_columns:
                 options: list[Value] = [base.row(row_id).get(column)]
-                for writer in self.write_edges.get(Cell(row_id, column), ()):  # type: ignore[arg-type]
+                for writer in self.write_edges.get(Cell(row_id, column), ()):
                     other = self.proposals[writer]
                     options.append(WILDCARD if other.replayable else other.patch[Cell(row_id, column)])
                 per_column.append(options)
@@ -118,12 +95,6 @@ class Hypergraph:
 
     def _link_by_key(self, proposal: Proposal, base: Table,
                      constraints: Sequence[DenialConstraint]) -> None:
-        """Link through shared DC keys, using one bucket per key.
-
-        A key with a wildcard (a replayable write on a key attribute) can meet
-        any key of that DC, so it joins every bucket of it; that over-merges
-        components at worst, which keeps Lemma 4.2 sound.
-        """
         for dc in constraints:
             keys = self.reachable_keys(proposal, base, dc)
             if not keys:
@@ -145,7 +116,6 @@ class Hypergraph:
                     self.link(proposal.lineage, other)
                 bucket.add(proposal.lineage)
 
-    # -- union-find --------------------------------------------------------
     def find(self, pid: str) -> str:
         root = self._component.setdefault(pid, pid)
         while root != self._component[root]:
@@ -164,9 +134,7 @@ class Hypergraph:
             out.setdefault(self.find(pid), []).append(pid)
         return {k: sorted(v) for k, v in out.items()}
 
-    # -- replay order ------------------------------------------------------
     def candidate_readers(self, cells: Iterable[Cell], among: Iterable[str]) -> set[str]:
-        """Members of `among` that may read one of `cells`."""
         among = set(among)
         writers = {w for cell in cells for w in self.write_edges.get(cell, ())}
         out: set[str] = set()
@@ -175,7 +143,6 @@ class Hypergraph:
         return out
 
     def replay_cycles(self) -> set[str]:
-        """Replayable lineages lying on a cycle of the replay graph (A6)."""
         nodes = [p for p, prop in self.proposals.items() if prop.replayable]
         edges = {n: self.invalidation.get(n, set()) & set(nodes) for n in nodes}
         on_cycle: set[str] = set()
@@ -199,10 +166,6 @@ class Hypergraph:
         return on_cycle
 
     def order(self, members: Sequence[str]) -> list[str] | None:
-        """Non-replayable members first, then replayable ones topologically.
-
-        Returns None when the induced invalidation edges form a cycle.
-        """
         members = list(members)
         head = sorted(m for m in members if not self.proposals[m].replayable)
         tail = sorted(m for m in members if self.proposals[m].replayable)

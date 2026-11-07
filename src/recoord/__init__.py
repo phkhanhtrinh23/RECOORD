@@ -1,5 +1,3 @@
-"""Coordination of repair proposals produced by independent data agents."""
-
 from .model import Atom, Cell, Program, Proposal, Query, Violation, Write
 from .coordinator import Coordinator, CoordinatorConfig
 from .table import Table

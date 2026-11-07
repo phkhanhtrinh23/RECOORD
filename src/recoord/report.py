@@ -1,9 +1,3 @@
-"""Turning result rows into readable tables.
-
-`compare` also does the paired statistics: per-DC-group differences between two
-methods, bootstrapped and Holm-corrected over the whole family of comparisons.
-"""
-
 from __future__ import annotations
 
 import json
@@ -42,7 +36,6 @@ def mean(rows: Sequence[dict[str, Any]], column: str) -> float | None:
 
 def aggregate(rows: Sequence[dict[str, Any]], by: Sequence[str] = ("dataset", "method"),
               columns: Sequence[str] = tuple(HEADLINE)) -> list[dict[str, Any]]:
-    """Mean of every run per group, plus the number of runs."""
     groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         groups[tuple(row.get(k) for k in by)].append(row)
@@ -61,7 +54,6 @@ def aggregate(rows: Sequence[dict[str, Any]], by: Sequence[str] = ("dataset", "m
 
 
 def table(rows: Sequence[dict[str, Any]], columns: Sequence[str] | None = None) -> str:
-    """A Markdown table."""
     if not rows:
         return "(no rows)"
     columns = list(columns or _columns(rows))
@@ -94,15 +86,8 @@ def _is_number(value: Any) -> bool:
         return False
 
 
-# -- paired comparisons -----------------------------------------------------
-
 def compare(rows: Sequence[dict[str, Any]], against: str = "lww", metric: str = "f1",
             reference: str = "recoord", draws: int = 10_000, seed: int = 0) -> dict[str, Any]:
-    """Paired bootstrap of `reference` minus `against`, per dataset, Holm-corrected.
-
-    Runs are the clusters here; a per-group bootstrap needs the per-group
-    scores, which `recoord.stats.paired_difference` takes directly.
-    """
     out: dict[str, Any] = {}
     pvalues: dict[str, float] = {}
     for dataset in sorted({r.get("dataset") for r in rows}):
@@ -122,5 +107,4 @@ def compare(rows: Sequence[dict[str, Any]], against: str = "lww", metric: str = 
 
 
 def headline(rows: Sequence[dict[str, Any]]) -> str:
-    """The one table worth printing after a run."""
     return table(aggregate(rows))

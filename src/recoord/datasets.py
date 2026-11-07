@@ -1,14 +1,3 @@
-"""Dataset specifications: where the data comes from, its DCs, and its clients.
-
-A spec is a YAML file (see `recoord/specs/`).  `kind: csv` points at a dirty and
-a clean CSV -- the layout of the Raha/Baran benchmarks, which
-`scripts/get_data.sh` fetches.  `kind: catalog` builds the synthetic
-multi-vendor catalog and injects errors, so a run needs no download.
-
-Constraints and rules naming absent columns are dropped, so one spec survives a
-benchmark whose schema differs a little.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -35,9 +24,9 @@ class ClientSpec:
     rules: tuple[str, ...]
     role: str = "normalizer"
     accuracy: float = 0.78
-    rows: float = 1.0            # share of the rows this client holds
+    rows: float = 1.0
     private: bool = False
-    jitter: float = 0.12         # spread of the simulated confidence scores
+    jitter: float = 0.12
 
 
 @dataclass
@@ -110,7 +99,6 @@ def load(name: str, *, root: str | Path = "data", seed: int = 0,
 
 def _warn_dropped(what: str, raw: Sequence[Any], kept: Sequence[Any],
                   columns: set[str]) -> None:
-    """A spec may name a column the table lacks; losing all of them is a typo."""
     if len(kept) == len(raw):
         return
     message = (f"the spec's {what}s name columns this table lacks "
@@ -133,16 +121,10 @@ def _read_csv(path: Path, id_column: str) -> Table:
 
 
 def _canonical(name: str) -> str:
-    """A column name without its spelling: "ProviderNumber" -> "providernumber"."""
     return "".join(c for c in name.lower() if c.isalnum())
 
 
 def _align(dirty: Table, clean: Table) -> Table:
-    """Give the clean table the dirty table's column names.
-
-    Published benchmarks do not always spell the two files' headers the same
-    way; where the names cannot be matched, the order is all there is to go on.
-    """
     if clean.columns == dirty.columns:
         return clean
     by_canonical = {_canonical(c): c for c in dirty.columns}

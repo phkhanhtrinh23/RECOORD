@@ -1,13 +1,3 @@
-"""Clients, the server's view of them, and the cost of talking to them.
-
-The server holds the master copy and, per proposal, only the patch, the text of
-the evidence queries, a replayable flag and a score.  Programs, cached answers
-and private tables stay at the client, so a replay or a regeneration is a
-*call*: the server ships the answer delta (or the full answer of a query issued
-anew) and takes back a patch or a new version.  `Fleet` is that call interface
-and also the place where traffic, LLM calls and tokens are counted.
-"""
-
 from __future__ import annotations
 
 import json
@@ -21,8 +11,6 @@ from . import programs
 
 
 class Agent(Protocol):
-    """What a client's data agent must offer."""
-
     name: str
 
     def propose(self, view: Table, client: str) -> list[Proposal]: ...
@@ -47,8 +35,6 @@ class Usage:
 
 @dataclass
 class CallLog:
-    """Everything the paper reports as cost."""
-
     initial_calls: int = 0
     regeneration_calls: int = 0
     replay_calls: int = 0
@@ -66,7 +52,6 @@ class CallLog:
 
     @property
     def rederivation_calls(self) -> int:
-        """Calls spent re-deriving a repair, the quantity Prop. 4.5 compares."""
         return self.regeneration_calls
 
     @property
@@ -86,13 +71,11 @@ class CallLog:
 
 @dataclass
 class Client:
-    """One organisation: its copy of the relation, its agent, its private data."""
-
     name: str
     agent: Agent
     table: Table
     private: dict[str, Any] = field(default_factory=dict)
-    row_ids: tuple[str, ...] | None = None     # a partial copy
+    row_ids: tuple[str, ...] | None = None
     available: bool = True
     fail_rate: float = 0.0
     seed: int = 0
@@ -102,7 +85,6 @@ class Client:
         self._rng = random.Random(f"{self.name}:{self.seed}")
 
     def view(self, master: Table) -> Table:
-        """The instance this client's agent reads."""
         return master if self.row_ids is None else restrict(master, self.row_ids)
 
     def drops_call(self) -> bool:
@@ -110,16 +92,12 @@ class Client:
 
 
 class Fleet:
-    """The server's handle on the clients plus the cost counters."""
-
     def __init__(self, clients: Sequence[Client], retries: int = 0):
         self.clients = {c.name: c for c in clients}
         self.retries = retries
         self.log = CallLog()
 
-    # -- initial proposals -------------------------------------------------
     def collect(self, master: Table) -> list[Proposal]:
-        """Every client runs its agent once and uploads its proposals."""
         pool: list[Proposal] = []
         for name in sorted(self.clients):
             client = self.clients[name]
@@ -143,13 +121,8 @@ class Fleet:
         })
         return proposal
 
-    # -- replay call -------------------------------------------------------
     def replay(self, proposal: Proposal, answers: tuple[Answer, ...],
                delta: tuple[Answer, ...] | None = None) -> list[Write] | None:
-        """Ask o(r) to re-run its program on fresh answers.  No LLM call.
-
-        Only `delta`, the rows of the answers that moved, goes over the wire.
-        """
         client = self.clients.get(proposal.client)
         if client is None or not client.available or proposal.program is None:
             return None
@@ -171,13 +144,11 @@ class Fleet:
         self.log.call_bytes += _size([[w.cell.row, w.cell.column, w.value] for w in writes])
         return writes
 
-    # -- agent call --------------------------------------------------------
     def regenerate(self, proposal: Proposal, master: Table, answers: tuple[Answer, ...]) -> Proposal | None:
-        """Re-prompt o(r)'s agent with the new answers; costs one LLM call."""
         client = self.clients.get(proposal.client)
         if client is None or not client.available:
             return None
-        before = Usage(**client.agent.usage.__dict__)   # snapshot: usage is mutated in place
+        before = Usage(**client.agent.usage.__dict__)
         for attempt in range(self.retries + 1):
             self.log.call_bytes += _size(answers)
             if client.drops_call():
@@ -200,7 +171,6 @@ class Fleet:
                           client=proposal.client, id=f"{proposal.lineage}#g{proposal.generation + 1}")
         return self._upload(version)
 
-    # -- merged delta ------------------------------------------------------
     def broadcast(self, patch: Sequence[Write]) -> None:
         payload = _size([[w.cell.row, w.cell.column, w.value] for w in patch])
         self.log.patch_bytes += payload * max(1, len(self.clients))
@@ -209,7 +179,6 @@ class Fleet:
                 client.table.apply(w for w in patch if w.cell.row in client.table)
 
     def freeze(self, name: str) -> None:
-        """A client leaves: its members stay, frozen as non-replayable."""
         if name in self.clients:
             self.clients[name].available = False
 

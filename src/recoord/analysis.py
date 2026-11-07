@@ -1,12 +1,3 @@
-"""What the guarantees cost in practice.
-
-Per component, we enumerate the valid subsets to measure the interference
-parameter p_K, whether the valid sets are subset-closed, whether assumption
-(A7) holds, and the exact optimum OPT_K.  Components above `limit` elements are
-skipped and reported as such.  The optimum is an integer program when `highspy`
-is installed and an enumeration otherwise.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,20 +20,18 @@ class ComponentReport:
     enumerated: bool
     p: int | None = None
     subset_closed: bool | None = None
-    a7: bool | None = None
+    no_cancellation: bool | None = None
     optimum: float | None = None
-    optimum_open: float | None = None     # best utility of a set of members valid alone
+    optimum_open: float | None = None
     greedy: float | None = None
     epsilon: int = 0
-    bound: float | None = None            # OPT_open / (p + epsilon)
+    bound: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
 
 
 class ValidityOracle:
-    """Tests (V1)--(V4) for an arbitrary subset of one component."""
-
     def __init__(self, base: Table, constraints: Sequence[DenialConstraint],
                  fleet: Fleet, graph: Hypergraph):
         self.base = base
@@ -52,35 +41,34 @@ class ValidityOracle:
 
     def valid(self, members: Sequence[Proposal]) -> bool:
         index = {m.lineage: m for m in members}
-        # (V1) no write conflict
+
         for a, b in combinations(members, 2):
             shared = a.write_cells & b.write_cells
             if shared and (a.replayable or b.replayable
                            or any(a.patch[c] != b.patch[c] for c in shared)):
                 return False
-        # (V2) candidate edges acyclic
+
         if has_cycle(list(index), {m: self.graph.invalidation.get(m, set()) & set(index) for m in index}):
             return False
         settled = self._instance(members)
         if settled is None:
-            return False                      # (V3) a replay failed
+            return False
         table, index = settled
-        members = list(index.values())         # replays may have moved a patch
+        members = list(index.values())
         changed = [c for c in changed_cells(self.base, table)
                    if any(c.column in dc.columns for dc in self.constraints)]
         rows = affected_rows(table, self.constraints, changed)
         for member in members:
             without = self._without(table, member, index)
             if not without.matches(member.evidence, member.queries):
-                return False                  # (V2) not current
+                return False
             if any(c.row in rows for c in member.write_cells) \
                     and worsens(without, table, self.constraints, member.write_cells):
-                return False                  # (V4) worsens a DC
+                return False
         protected = self._protected(table, members, index)
         return not adopts(table, self.constraints, protected, rows)
 
     def _instance(self, members: Sequence[Proposal]) -> tuple[Table, dict[str, Proposal]] | None:
-        """D_T: non-replayable patches, then replays in replay order."""
         index = {m.lineage: m for m in members}
         order = self.graph.order(list(index))
         if order is None:
@@ -134,7 +122,7 @@ def analyse_components(base: Table, pool: Sequence[Proposal], constraints: Seque
         alone = {m.lineage for m in members if frozenset([m.lineage]) in valid}
         report.p = _interference_parameter(valid, [m.lineage for m in members])
         report.subset_closed = _subset_closed(valid)
-        report.a7 = _no_cancellation(valid, alone)
+        report.no_cancellation = _no_cancellation(valid, alone)
         report.epsilon = int(any(
             a.write_cells & b.write_cells and not a.replayable and not b.replayable
             and all(a.patch[c] == b.patch[c] for c in a.write_cells & b.write_cells)
@@ -155,7 +143,6 @@ def analyse_components(base: Table, pool: Sequence[Proposal], constraints: Seque
 
 
 def _enumerate_valid(oracle: ValidityOracle, members: Sequence[Proposal]) -> set[frozenset[str]]:
-    """All valid subsets.  Pruned: a subset of nothing valid cannot help."""
     lineages = [m.lineage for m in members]
     index = {m.lineage: m for m in members}
     valid: set[frozenset[str]] = {frozenset()}
@@ -185,7 +172,6 @@ def _subset_closed(valid: set[frozenset[str]]) -> bool:
 
 
 def _interference_parameter(valid: set[frozenset[str]], lineages: Sequence[str]) -> int:
-    """p_K: how many members admitting one new proposal can cost."""
     downward = _downward_closure(valid)
     best = 1
     for e in lineages:
@@ -208,7 +194,6 @@ def _downward_closure(valid: set[frozenset[str]]) -> set[frozenset[str]]:
 
 
 def _minimal_invalid(downward: set[frozenset[str]], lineages: Sequence[str]) -> list[frozenset[str]]:
-    """Sets outside the closure all of whose proper subsets are inside it."""
     out = []
     for size in range(1, min(4, len(lineages)) + 1):
         for combo in combinations(sorted(lineages), size):
@@ -221,7 +206,6 @@ def _minimal_invalid(downward: set[frozenset[str]], lineages: Sequence[str]) -> 
 
 
 def _no_cancellation(valid: set[frozenset[str]], alone: set[str]) -> bool:
-    """(A7): a valid set plus a proposal valid alone is valid if some valid set holds both."""
     for t in valid:
         for e in alone:
             if e in t:
@@ -232,13 +216,11 @@ def _no_cancellation(valid: set[frozenset[str]], alone: set[str]) -> bool:
 
 
 def _ilp_optimum(valid: set[frozenset[str]], scores: dict[str, Proposal]) -> float | None:
-    """Exact per-component optimum with HiGHS, if it is installed."""
     try:
         import highspy
     except ImportError:
         return None
-    # The utility is a sum of per-cell maxima over an explicit list of valid
-    # sets, so the program is a one-of-many choice and HiGHS solves it exactly.
+
     sets = sorted(valid, key=lambda s: sorted(s))
     if not sets:
         return 0.0

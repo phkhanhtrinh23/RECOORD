@@ -1,9 +1,3 @@
-"""Cell-level repair quality and the two instance descriptors.
-
-A NULL counts as not repaired on an erroneous cell and as a wrong repair on a
-correct one, so the NULL patch is never free.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -42,7 +36,6 @@ class Quality:
 def quality(dirty: Table, repaired: Table, clean: Table,
             columns: Sequence[str] | None = None,
             cells: Iterable[Cell] | None = None) -> Quality:
-    """Precision, recall and F1 over the cells of `clean`."""
     out = Quality()
     scope = None if cells is None else set(cells)
     for row_id, truth_row in clean.rows():
@@ -59,8 +52,6 @@ def quality(dirty: Table, repaired: Table, clean: Table,
             if erroneous and after == truth:
                 out.tp += 1
             elif after != before and after != truth and not (erroneous and nulled):
-                # A NULL is not repaired on an erroneous cell, but is a wrong
-                # repair on a correct one.
                 out.fp += 1
             if erroneous and after != truth:
                 out.fn += 1
@@ -69,7 +60,6 @@ def quality(dirty: Table, repaired: Table, clean: Table,
 
 def per_cell_quality(dirty: Table, repaired: Table, clean: Table,
                      buckets: dict[str, Iterable[Cell]]) -> dict[str, dict[str, float]]:
-    """F1 restricted to named cell sets, e.g. seen vs held-out error types."""
     return {name: quality(dirty, repaired, clean, cells=cells).as_dict()
             for name, cells in buckets.items()}
 
@@ -82,7 +72,6 @@ def error_cells(dirty: Table, clean: Table) -> set[Cell]:
 
 
 def interference_rate(report_stats: dict[str, Any]) -> float:
-    """iota: re-derivations that change a patch plus (iii) rejections per element."""
     pool = max(1, int(report_stats.get("pool", 0)))
     moved = int(report_stats.get("replayed", 0)) + int(report_stats.get("regenerated", 0))
     return (moved + int(report_stats.get("dc_rejected", 0))) / pool
@@ -90,14 +79,12 @@ def interference_rate(report_stats: dict[str, Any]) -> float:
 
 def wrong_plurality_share(dirty: Table, clean: Table,
                           constraints: Sequence[DenialConstraint]) -> float:
-    """omega: the share of DC groups whose plurality value is wrong on D0."""
     return plurality_is_wrong(dirty, clean, constraints)
 
 
 def summarise(name: str, dataset: str, report, dirty: Table, clean: Table | None,
               constraints: Sequence[DenialConstraint], seconds: float = 0.0,
               buckets: dict[str, Iterable[Cell]] | None = None) -> dict[str, Any]:
-    """One row of a results table."""
     row: dict[str, Any] = {
         "dataset": dataset, "method": name, "seconds": round(seconds, 3),
         **{k: v for k, v in report.stats.items() if k != "method"},
