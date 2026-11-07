@@ -18,7 +18,7 @@ def test_every_shipped_spec_parses():
 
 def test_demo_is_the_running_example(demo):
     assert len(demo.dirty) == 3
-    assert [c.name for c in demo.constraints] == ["gtin-volume", "gtin-total"]
+    assert [c.name for c in demo.constraints] == ["gtin-volume"]
     assert {c.name for c in demo.clients} == {"A", "B", "C"}
 
 

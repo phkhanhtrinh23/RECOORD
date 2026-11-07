@@ -38,7 +38,6 @@ clean_rows:
 
 constraints:
   - {name: gtin-volume, lhs: [gtin], rhs: unit_volume_ml}
-  - {name: gtin-total, lhs: [gtin], rhs: total_volume_ml}
 
 rules:
   - {name: volume-from-description, role: normalizer, target: unit_volume_ml,

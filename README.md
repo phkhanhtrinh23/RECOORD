@@ -27,7 +27,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 ```
 
 That builds a multi-vendor catalog, injects errors, runs four agents over it,
-and merges their proposals with ReCoord and eleven baselines. No API key and no
+and merges their proposals with ReCoord and ten baselines. No API key and no
 download needed.
 
 ```bash
@@ -43,7 +43,7 @@ recoord datasets                           # what is available
 recoord run <dataset> [--methods ...]      # merge, compare, write results
 recoord sweep <sweep> <dataset>            # vary one thing at a time
 recoord report results/ --compare lww      # aggregate, with paired intervals
-recoord check                              # the self-checks below
+recoord check                              # verify the guarantees by enumeration
 ```
 
 ## Data Loading

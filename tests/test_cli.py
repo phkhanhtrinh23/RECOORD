@@ -33,10 +33,11 @@ def test_check_passes(capsys):
     assert "FAIL" not in capsys.readouterr().out
 
 
-def test_unknown_method_is_rejected(tmp_path):
-    try:
-        main(["run", "demo", "--out", str(tmp_path), "--methods", "nope"])
-    except ValueError as error:
-        assert "nope" in str(error)
-    else:
-        raise AssertionError("expected a ValueError")
+def test_unknown_method_is_rejected(tmp_path, capsys):
+    assert main(["run", "demo", "--out", str(tmp_path), "--methods", "nope"]) == 1
+    assert "nope" in capsys.readouterr().err
+
+
+def test_unknown_dataset_is_rejected(tmp_path, capsys):
+    assert main(["run", "nosuch", "--out", str(tmp_path)]) == 1
+    assert "no dataset spec" in capsys.readouterr().err

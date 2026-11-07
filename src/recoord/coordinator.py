@@ -361,15 +361,30 @@ class Coordinator:
         columns = {c for dc in self.constraints for c in dc.columns}
         changed = [c for c in touched
                    if c.column in columns and self.table.value(c) != trial.value(c)]
-        if not changed:
+        shielded = [c for c in self._newly_protected() if c.column in columns]
+        if not changed and not shielded:
             return True
-        rows = affected_rows(trial, self.constraints, changed)
         index = {m.lineage: m for m in members}
+        rows = affected_rows(trial, self.constraints, changed + shielded)
         local = [m for m in members if any(c.row in rows for c in m.write_cells)]
         for member in local:
             if self._worsens(trial, member, index):
                 return False
-        return not adopts(trial, self.constraints, self._protected_near(local, rows, trial, index), rows)
+        protected = self._protected_near(local, rows, trial, index)
+        return not adopts(trial, self.constraints, protected, rows)
+
+    def _newly_protected(self) -> set[Cell]:
+        candidate = self._pending
+        if candidate is None:
+            return set()
+        cells = set(candidate.write_cells)
+        for query in candidate.queries:
+            static = query.static_cells()
+            if static is not None:
+                cells |= {Cell(r, c) for r, c in static}
+            else:
+                cells |= self.table.provenance(query)
+        return cells - self._read
 
     def _component_members(self, candidate: Proposal, members: dict[str, Proposal]) -> dict[str, Proposal]:
         root = self.graph.find(candidate.lineage)

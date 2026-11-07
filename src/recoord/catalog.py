@@ -20,7 +20,7 @@ UNIT_VOLUMES = (200, 330, 500, 750, 1000, 1500)
 PACK_SIZES = (1, 4, 6, 12)
 COLUMNS = ["gtin", "vendor", "brand", "title", "category", "description",
            "unit_volume_ml", "pack_size", "total_volume_ml", "price_cents",
-           "currency", "country"]
+           "cents_per_litre", "currency", "country"]
 
 
 @dataclass
@@ -57,6 +57,7 @@ def build(spec: CatalogSpec) -> Table:
 
         vendor = vendors[offer % len(vendors)] if offer < len(vendors) else rng.choice(vendors)
         total = product["unit_volume_ml"] * product["pack_size"]
+        per_litre = round(product["price"] * 1000 / total)
         rows.append({
             "id": f"o{offer:06d}",
             "gtin": product["gtin"],
@@ -69,6 +70,7 @@ def build(spec: CatalogSpec) -> Table:
             "pack_size": str(product["pack_size"]),
             "total_volume_ml": str(total),
             "price_cents": str(product["price"]),
+            "cents_per_litre": str(per_litre),
             "currency": "EUR" if countries[vendor] != "GB" else "GBP",
             "country": countries[vendor],
         })

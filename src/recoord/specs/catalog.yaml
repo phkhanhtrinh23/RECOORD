@@ -13,10 +13,11 @@ error_plan:
   held_out: [U1, U2, U3]        # only in the test split
   group_key: [gtin]
   columns: [brand, title, category, description, unit_volume_ml, pack_size,
-            total_volume_ml, price_cents, currency, country]
+            total_volume_ml, price_cents, cents_per_litre, currency, country]
   column_types:
     unit_volume_ml: [U1, U2, missing, dependency]
     total_volume_ml: [U1, U2, missing, dependency]
+    cents_per_litre: [U1, U2, missing]
     pack_size: [U2, missing, typo]
     category: [U3, format, swap]
     currency: [swap, missing]
@@ -51,6 +52,9 @@ rules:
      when: regex, pattern: "[A-Z ]", score: 0.74}
   - {name: total-from-unit, role: deriver, target: total_volume_ml,
      sources: [pack_size, unit_volume_ml], program: product, when: always, score: 0.84}
+  - {name: price-per-litre, role: deriver, target: cents_per_litre,
+     sources: [price_cents, total_volume_ml], program: ratio,
+     options: {scale: 1000}, when: always, score: 0.82}
   - {name: impute-volume, role: imputer, target: unit_volume_ml,
      sources: [unit_volume_ml], program: plurality, scope: group,
      group_key: [gtin], when: "null", score: 0.72}
@@ -66,7 +70,8 @@ rules:
 clients:
   - {name: marketplace, role: normalizer, accuracy: 0.80,
      rules: [volume-from-description, pack-from-title, category-case]}
-  - {name: price-comparison, role: deriver, accuracy: 0.80, rules: [total-from-unit]}
+  - {name: price-comparison, role: deriver, accuracy: 0.80,
+     rules: [total-from-unit, price-per-litre]}
   - {name: retailer, role: imputer, accuracy: 0.76, private: true,
      rules: [impute-volume, impute-brand, impute-currency]}
   - {name: gtin-pool, role: matcher, accuracy: 0.66, rules: [match-category, match-brand]}

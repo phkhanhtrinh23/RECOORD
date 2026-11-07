@@ -59,18 +59,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     check_cmd.add_argument("--limit", type=int, default=60)
 
     args = parser.parse_args(argv)
-    if args.command == "datasets":
-        print("\n".join(datasets_available()))
-        return 0
-    if args.command == "run":
-        return _run(args)
-    if args.command == "sweep":
-        return _sweep(args)
-    if args.command == "report":
-        return _report(args)
-    if args.command == "check":
-        return _check(args)
-    return 1
+    commands = {"datasets": _datasets, "run": _run, "sweep": _sweep,
+                "report": _report, "check": _check}
+    try:
+        return commands[args.command](args)
+    except (RuntimeError, FileNotFoundError, ValueError) as error:
+        print(f"recoord: {error}", file=sys.stderr)
+        return 1
+
+
+def _datasets(args: argparse.Namespace) -> int:
+    print("\n".join(datasets_available()))
+    return 0
 
 
 def _common(parser: argparse.ArgumentParser) -> None:

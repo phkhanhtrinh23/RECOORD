@@ -87,6 +87,28 @@ def _sum(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Writ
     return [Write(spec.targets[0], _tidy(sum((_number(v) for v in _cells(answers)), Decimal(0))))]
 
 
+@program("ratio")
+def _ratio(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
+    values = [_number(v) for v in _cells(answers)]
+    if len(values) < 2 or values[1] == 0:
+        return None
+    scale = Decimal(str(spec.options.get("scale", 1)))
+    digits = int(spec.options.get("digits", 0))
+    value = (values[0] * scale / values[1]).quantize(Decimal(1).scaleb(-digits))
+    return [Write(spec.targets[0], _tidy(value))]
+
+
+@precondition("ratio")
+def _ratio_ready(spec: Program, answers: tuple[Answer, ...], private: dict) -> bool:
+    values = _cells(answers)
+    if len(values) < 2:
+        return False
+    try:
+        return _number(values[1]) != 0 and _number(values[0]) is not None
+    except (InvalidOperation, ValueError, TypeError):
+        return False
+
+
 @program("copy")
 def _copy(spec: Program, answers: tuple[Answer, ...], private: dict) -> list[Write] | None:
     values = _cells(answers)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -57,8 +58,8 @@ class LLMClient:
         return self._openai(prompt)
 
     def _anthropic(self, prompt: str) -> tuple[str, Usage]:
-        import anthropic
-        self._client = self._client or anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        anthropic = _require("anthropic", self.model)
+        self._client = self._client or anthropic.Anthropic(api_key=_key("ANTHROPIC_API_KEY"))
         message = self._client.messages.create(
             model=self.model, max_tokens=self.max_tokens, temperature=self.temperature,
             system=SYSTEM, messages=[{"role": "user", "content": prompt}],
@@ -67,8 +68,8 @@ class LLMClient:
         return text, Usage(1, message.usage.input_tokens, message.usage.output_tokens)
 
     def _openai(self, prompt: str) -> tuple[str, Usage]:
-        import openai
-        self._client = self._client or openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        openai = _require("openai", self.model)
+        self._client = self._client or openai.OpenAI(api_key=_key("OPENAI_API_KEY"))
         reply = self._client.chat.completions.create(
             model=self.model, temperature=self.temperature, max_tokens=self.max_tokens,
             response_format={"type": "json_object"},
@@ -92,6 +93,23 @@ class LLMClient:
 
     def _write_cache(self, prompt: str, payload: dict) -> None:
         self._path(prompt).write_text(json.dumps(payload, sort_keys=True))
+
+
+def _require(package: str, model: str):
+    try:
+        return importlib.import_module(package)
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            f"the model {model!r} needs the {package!r} package: "
+            f"pip install -e '.[llm]', or run with --agent offline"
+        ) from error
+
+
+def _key(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"set {name} to use a model, or run with --agent offline")
+    return value
 
 
 def _parse(text: str) -> dict:
