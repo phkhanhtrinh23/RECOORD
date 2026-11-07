@@ -106,3 +106,46 @@ def test_offline_and_llm_agents_emit_the_same_shape():
 def test_an_unknown_agent_kind_is_rejected():
     with pytest.raises(ValueError, match="unknown agent kind"):
         build_agent("psychic", "c", [])
+
+
+def test_every_named_backbone_resolves_to_a_pinned_model():
+    from recoord.llm import BACKBONES, LLMClient, resolve
+    for name in BACKBONES:
+        model, provider, _url = resolve(name)
+        assert model and model != name
+        assert provider in ("openai", "anthropic")
+        client = LLMClient(model=name)
+        assert client.temperature == 0.0
+        assert client.model == model
+        if provider == "openai" and not name.startswith("gpt-"):
+            assert client.base_url
+
+
+def test_an_unknown_model_id_still_picks_a_provider():
+    from recoord.llm import resolve
+    assert resolve("gpt-5-nano")[1] == "openai"
+    assert resolve("claude-sonnet-4-5")[1] == "anthropic"
+
+
+def test_a_model_backed_agent_reports_only_the_usage_it_was_given():
+    from recoord.agents import Rule, build_agent
+    from recoord.federation import Usage
+    from recoord.llm import Reply
+
+    class Stub:
+        def repair(self, **_kw):
+            return Reply(["x"], 0.9, Usage(1, 100, 10))
+
+    rule = Rule(name="r", target="a", sources=("b",))
+    agent = build_agent("llm", "c", [rule], client=Stub())
+    agent.judge(rule, None, (), ())
+    assert agent.usage.input_tokens == 100
+    assert agent.usage.output_tokens == 10
+
+
+def test_a_keyless_agent_prices_calls_from_its_cost_model():
+    from recoord.agents import CostModel, Rule, build_agent
+    rule = Rule(name="r", target="a", sources=("b",))
+    agent = build_agent("offline", "c", [rule])
+    assert agent.cost == CostModel()
+    assert agent.cost.measured is False

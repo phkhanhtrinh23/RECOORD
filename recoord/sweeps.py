@@ -164,9 +164,11 @@ def agents(cfg: RunConfig, kinds: Sequence[str] = ("offline", "rules"), **_: Any
 
 
 @sweep("backbones")
-def backbones(cfg: RunConfig, models: Sequence[str] = (), **_: Any) -> Rows:
+def backbones(cfg: RunConfig, models: Sequence[str] = (
+        "gpt-4o-mini", "gpt-4o", "claude-3.5-sonnet",
+        "llama-3.1-70b", "qwen2.5-72b"), **_: Any) -> Rows:
     out: Rows = []
-    for model in models or (cfg.model,):
+    for model in models:
         out += _rows(replace(cfg, agent="llm", model=model, methods=("recoord", "occ-rv")), "model", model)
     return out
 

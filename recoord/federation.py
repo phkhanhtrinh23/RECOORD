@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, Sequence
 
@@ -92,25 +93,36 @@ class Client:
 
 
 class Fleet:
-    def __init__(self, clients: Sequence[Client], retries: int = 0):
+    def __init__(self, clients: Sequence[Client], retries: int = 0, concurrency: int = 16):
         self.clients = {c.name: c for c in clients}
         self.retries = retries
+        self.concurrency = max(1, concurrency)
         self.log = CallLog()
 
     def collect(self, master: Table) -> list[Proposal]:
+        names = [n for n in sorted(self.clients) if self.clients[n].available]
+        for name in names:
+            self.clients[name].table = self.clients[name].view(master)
+        proposals = dict(zip(names, self._propose(names)))
         pool: list[Proposal] = []
-        for name in sorted(self.clients):
-            client = self.clients[name]
-            if not client.available:
-                continue
-            client.table = client.view(master)
-            proposals = client.agent.propose(client.table, name)
-            for proposal in proposals:
+        for name in names:
+            for proposal in proposals[name]:
                 pool.append(self._upload(proposal))
-            self.log.initial_calls += client.agent.usage.calls
-            self.log.input_tokens += client.agent.usage.input_tokens
-            self.log.output_tokens += client.agent.usage.output_tokens
+            usage = self.clients[name].agent.usage
+            self.log.initial_calls += usage.calls
+            self.log.input_tokens += usage.input_tokens
+            self.log.output_tokens += usage.output_tokens
         return pool
+
+    def _ask(self, name: str) -> list[Proposal]:
+        client = self.clients[name]
+        return client.agent.propose(client.table, name)
+
+    def _propose(self, names: Sequence[str]) -> list[list[Proposal]]:
+        if self.concurrency == 1 or len(names) < 2:
+            return [self._ask(n) for n in names]
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
+            return list(pool.map(self._ask, names))
 
     def _upload(self, proposal: Proposal) -> Proposal:
         self.log.upload_bytes += _size({

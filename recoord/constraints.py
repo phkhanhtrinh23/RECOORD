@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any, Iterable, Sequence
 
 from .model import Cell, Value, Violation, compare
@@ -37,15 +38,15 @@ class DenialConstraint:
     kind: str = "dc"
     rhs: str | None = None
 
-    @property
+    @cached_property
     def key_columns(self) -> tuple[str, ...]:
         return tuple(sorted({p.left[1] for p in self.predicates if p.is_group_equality}))
 
-    @property
+    @cached_property
     def value_predicates(self) -> tuple[Predicate, ...]:
         return tuple(p for p in self.predicates if not p.is_group_equality)
 
-    @property
+    @cached_property
     def arity(self) -> int:
         mentions = {t[0] for p in self.predicates for t in (p.left, p.right)}
         return 1 if "t2" not in mentions else 2
@@ -58,11 +59,11 @@ class DenialConstraint:
                 out.append(pred)
         return tuple(out)
 
-    @property
+    @cached_property
     def columns(self) -> frozenset[str]:
         return frozenset().union(*(p.columns() for p in self.predicates)) if self.predicates else frozenset()
 
-    @property
+    @cached_property
     def value_columns(self) -> frozenset[str]:
         value = self.value_predicates
         if not value:

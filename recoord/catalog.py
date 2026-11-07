@@ -25,9 +25,11 @@ COLUMNS = ["gtin", "vendor", "brand", "title", "category", "description",
 
 @dataclass
 class CatalogSpec:
-    products: int = 300
+    products: int = 1_500
     vendors: int = 18
-    offers: int = 1_200
+    offers: int = 6_000
+    dev_offers: int = 1_200
+    dev_vendors: int = 15
     seed: int = 0
 
 
@@ -55,7 +57,8 @@ def build(spec: CatalogSpec) -> Table:
     for offer in range(spec.offers):
         product = products[offer % len(products)]
 
-        vendor = vendors[offer % len(vendors)] if offer < len(vendors) else rng.choice(vendors)
+        pool = vendors[: spec.dev_vendors] if offer < spec.dev_offers else vendors
+        vendor = pool[offer % len(pool)] if offer < len(pool) else rng.choice(pool)
         total = product["unit_volume_ml"] * product["pack_size"]
         per_litre = round(product["price"] * 1000 / total)
         rows.append({

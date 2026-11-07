@@ -47,6 +47,7 @@ class Coordinator:
                  fleet: Fleet, config: CoordinatorConfig | None = None):
         self.base = base
         self.constraints = list(constraints)
+        self._constraint_columns = {c for dc in self.constraints for c in dc.columns}
         self.fleet = fleet
         self.config = config or CoordinatorConfig()
         self.graph = Hypergraph()
@@ -103,6 +104,7 @@ class Coordinator:
 
     def add_constraints(self, new: Sequence[DenialConstraint]) -> Report:
         self.constraints.extend(new)
+        self._constraint_columns = {c for dc in self.constraints for c in dc.columns}
         for proposal in self.graph.proposals.values():
             self.graph._link_by_key(proposal, self.base, list(new))
         touched = {
@@ -358,7 +360,7 @@ class Coordinator:
         return clone
 
     def _dc_test(self, trial: Table, members: Sequence[Proposal], touched: Iterable[Cell]) -> bool:
-        columns = {c for dc in self.constraints for c in dc.columns}
+        columns = self._constraint_columns
         changed = [c for c in touched
                    if c.column in columns and self.table.value(c) != trial.value(c)]
         shielded = [c for c in self._newly_protected() if c.column in columns]

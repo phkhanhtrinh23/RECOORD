@@ -1,5 +1,6 @@
 name: beers
 kind: csv
+dev_share: 0.2
 folder: beers
 id_column: index
 

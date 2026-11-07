@@ -10,6 +10,24 @@ from typing import Any, Sequence
 
 from .federation import Usage
 
+BACKBONES = {
+    "gpt-4o-mini": ("gpt-4o-mini-2024-07-18", "openai", None),
+    "gpt-4o": ("gpt-4o-2024-08-06", "openai", None),
+    "claude-3.5-sonnet": ("claude-3-5-sonnet-20241022", "anthropic", None),
+    "llama-3.1-70b": ("meta-llama/Meta-Llama-3.1-70B-Instruct", "openai",
+                      "https://api.together.xyz/v1"),
+    "qwen2.5-72b": ("Qwen/Qwen2.5-72B-Instruct", "openai",
+                    "https://api.together.xyz/v1"),
+}
+
+
+def resolve(name: str) -> tuple[str, str, str | None]:
+    if name in BACKBONES:
+        return BACKBONES[name]
+    provider = "openai" if name.startswith(("gpt-", "o1", "o3")) else "anthropic"
+    return name, provider, None
+
+
 SYSTEM = (
     "You repair cells of a relational table. You are given the answers of the "
     "queries you asked. Reply with JSON only: "
@@ -26,15 +44,17 @@ class Reply:
 
 
 class LLMClient:
-    def __init__(self, model: str = "claude-opus-5", temperature: float = 0.0,
+    def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.0,
                  cache_dir: str | Path = ".cache/llm", provider: str | None = None,
-                 max_tokens: int = 512):
-        self.model = model
+                 max_tokens: int = 512, base_url: str | None = None):
+        resolved, default_provider, default_url = resolve(model)
+        self.model = resolved
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.cache = Path(cache_dir)
         self.cache.mkdir(parents=True, exist_ok=True)
-        self.provider = provider or ("openai" if model.startswith(("gpt-", "o1", "o3")) else "anthropic")
+        self.provider = provider or default_provider
+        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL") or default_url
         self._client: Any = None
 
     def repair(self, rule: str, columns: Sequence[str], rows: Sequence[str],
@@ -69,7 +89,8 @@ class LLMClient:
 
     def _openai(self, prompt: str) -> tuple[str, Usage]:
         openai = _require("openai", self.model)
-        self._client = self._client or openai.OpenAI(api_key=_key("OPENAI_API_KEY"))
+        self._client = self._client or openai.OpenAI(
+            api_key=_key("OPENAI_API_KEY"), base_url=self.base_url)
         reply = self._client.chat.completions.create(
             model=self.model, temperature=self.temperature, max_tokens=self.max_tokens,
             response_format={"type": "json_object"},

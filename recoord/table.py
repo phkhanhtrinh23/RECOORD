@@ -13,7 +13,7 @@ def norm(value: Value) -> Value:
 
 class Table:
     __slots__ = ("columns", "id_column", "_rows", "_order", "_cache", "_cached_columns",
-                 "_groups", "_by_column")
+                 "_groups", "_by_column", "_engine", "_engine_stale")
 
     def __init__(self, rows: Iterable[dict[str, Any]], id_column: str = "id", columns: list[str] | None = None):
         self._rows: dict[str, dict[str, Value]] = {}
@@ -30,6 +30,8 @@ class Table:
             self._rows[rid] = {k: norm(v) for k, v in raw.items() if k != id_column}
             self._order.append(rid)
         self.columns = list(columns or [c for c in (first or [id_column]) if c != id_column])
+        self._engine: Any = None
+        self._engine_stale = False
         self._cache: dict[str, tuple[Answer, ...]] = {}
         self._cached_columns: dict[str, frozenset[str]] = {}
         self._groups: dict[tuple[str, ...], dict[tuple[Value, ...], list[str]]] = {}
@@ -66,6 +68,8 @@ class Table:
         clone._groups = {k: {key: list(v) for key, v in index.items()}
                          for k, index in self._groups.items()}
         clone._by_column = {k: set(v) for k, v in self._by_column.items()}
+        clone._engine = None
+        clone._engine_stale = False
         return clone
 
     def as_records(self) -> list[dict[str, Any]]:
@@ -87,6 +91,7 @@ class Table:
             row[write.cell.column] = norm(write.value)
             touched.add(write.cell.column)
         if touched:
+            self._engine_stale = self._engine is not None
             self._invalidate(touched)
 
     def _invalidate(self, columns: set[str]) -> None:
@@ -156,7 +161,23 @@ class Table:
                 out.append((rid, row))
         return out
 
+    def use_engine(self, factory: Any) -> "Table":
+        self._engine = factory(self)
+        self._engine_stale = False
+        self._cache.clear()
+        self._cached_columns.clear()
+        self._by_column.clear()
+        return self
+
     def _evaluate(self, query: Query) -> tuple[Answer, frozenset[Cell]]:
+        if self._engine is not None:
+            if self._engine_stale:
+                self._engine.refresh(self)
+                self._engine_stale = False
+            return self._engine.evaluate(query)
+        return self._evaluate_python(query)
+
+    def _evaluate_python(self, query: Query) -> tuple[Answer, frozenset[Cell]]:
         blocks = [self._scan(atom) for atom in query.atoms]
         provenance: set[Cell] = set()
 

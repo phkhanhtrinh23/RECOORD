@@ -112,9 +112,11 @@ def inject(clean: Table, plan: ErrorPlan, seed: int = 0) -> tuple[Table, list[In
     cells = [Cell(rid, c) for rid, _ in clean.rows() for c in columns
              if clean.row(rid).get(c) is not None]
     rng.shuffle(cells)
-    budget = int(len(cells) * plan.rate)
+    budget = min(len(cells), int(len(clean.row_ids) * len(clean.columns) * plan.rate))
     log: list[Injection] = []
-    for cell in cells[:budget]:
+    for cell in cells:
+        if len(log) >= budget:
+            break
         allowed = plan.column_types.get(cell.column, plan.types)
         allowed = tuple(t for t in allowed if t in plan.types) or plan.types
         kind = _pick(rng, allowed, plan.weights)

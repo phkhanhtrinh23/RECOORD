@@ -14,6 +14,18 @@ ROLES = ("imputer", "normalizer", "deriver", "matcher")
 
 
 @dataclass(frozen=True)
+class CostModel:
+    input_per_turn: int = 4_870
+    output_per_turn: int = 163
+    regeneration_input: int = 3_550
+    regeneration_output: int = 290
+    measured: bool = False
+
+
+MEASURED = CostModel(0, 0, 0, 0, measured=True)
+
+
+@dataclass(frozen=True)
 class Rule:
     name: str
     target: str
@@ -76,12 +88,14 @@ def parse_rules(specs: Sequence[dict[str, Any]]) -> list[Rule]:
 
 class TemplateAgent:
     def __init__(self, name: str, rules: Sequence[Rule], seed: int = 0,
-                 max_proposals: int | None = None, turns: int = 3):
+                 max_proposals: int | None = None, turns: int = 3,
+                 cost: CostModel | None = None):
         self.name = name
         self.rules = list(rules)
         self.seed = seed
         self.max_proposals = max_proposals
         self.turns = turns
+        self.cost = cost or CostModel()
         self._usage = Usage()
         self._rng = random.Random(f"{name}:{seed}")
 
@@ -98,8 +112,8 @@ class TemplateAgent:
             out = out[: self.max_proposals]
 
         self._usage.calls += len(self.rules)
-        self._usage.input_tokens += self.turns * 4_870 * len(self.rules)
-        self._usage.output_tokens += self.turns * 163 * len(self.rules)
+        self._usage.input_tokens += self.turns * self.cost.input_per_turn * len(self.rules)
+        self._usage.output_tokens += self.turns * self.cost.output_per_turn * len(self.rules)
         return out
 
     def _fire(self, rule: Rule, view: Table, client: str) -> list[Proposal]:
@@ -190,8 +204,8 @@ class TemplateAgent:
         if rule is None:
             return None
         self._usage.calls += 1
-        self._usage.input_tokens += 3_550
-        self._usage.output_tokens += 290
+        self._usage.input_tokens += self.cost.regeneration_input
+        self._usage.output_tokens += self.cost.regeneration_output
         targets = tuple(w.cell for w in proposal.writes)
         if rule.program is not None:
             spec = replace(Program(rule.program, targets, dict(rule.options)), replayable=True)
@@ -266,6 +280,7 @@ class LLMAgent(TemplateAgent):
 
     def __init__(self, name: str, rules: Sequence[Rule], client: Any,
                  private: dict[str, Any] | None = None, **kw: Any):
+        kw.setdefault("cost", MEASURED)
         super().__init__(name, rules, **kw)
         self.llm = client
         self._private = private or {}
@@ -295,7 +310,7 @@ def build_agent(kind: str, name: str, rules: Sequence[Rule], **kw: Any) -> Templ
         return OfflineAgent(name, rules, **kw)
     if kind == "rules":
         return RuleAgent(name, rules, **{k: v for k, v in kw.items()
-                                         if k in ("seed", "max_proposals", "turns")})
+                                         if k in ("seed", "max_proposals", "turns", "cost")})
     if kind == "llm":
         return LLMAgent(name, rules, **kw)
     raise ValueError(f"unknown agent kind {kind!r}")

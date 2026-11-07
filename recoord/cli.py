@@ -39,7 +39,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                          help=f"method names or a group: {', '.join(GROUPS)}")
     run_cmd.add_argument("--analyse", action="store_true",
                          help="enumerate the valid repair sets per component")
-    run_cmd.add_argument("--analyse-limit", type=int, default=10)
+    run_cmd.add_argument("--analyse-limit", type=int, default=25)
     run_cmd.add_argument("--repeat", type=int, default=1, help="runs with consecutive seeds")
 
     sweep_cmd = sub.add_parser("sweep", help="run a parameter sweep")
@@ -78,9 +78,13 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--out", default="results")
     parser.add_argument("--agent", default="offline", choices=["offline", "llm", "rules"],
                         help="where judgement steps come from")
-    parser.add_argument("--model", default="claude-opus-5")
+    parser.add_argument("--model", default="gpt-4o-mini")
+    parser.add_argument("--base-url", dest="base_url", default=None)
+    parser.add_argument("--concurrency", type=int, default=16)
+    parser.add_argument("--engine", default="python", choices=["python", "duckdb"])
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--limit", type=int, default=None, help="use only the first N rows")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="use only the first N rows of the generated table")
     parser.add_argument("--split", default="test", choices=["dev", "test"])
     parser.add_argument("--error-rate", type=float, default=None)
     parser.add_argument("--threshold", type=float, default=0.5, help="tau")

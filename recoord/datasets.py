@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import random
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,7 +68,7 @@ def load(name: str, *, root: str | Path = "data", seed: int = 0,
     spec = yaml.safe_load(path.read_text())
     kind = spec.get("kind", "csv")
     if kind == "csv":
-        dirty, clean = _load_csv(spec, Path(root), limit)
+        dirty, clean = _load_csv(spec, Path(root), limit, split)
         log: list[Injection] = []
     elif kind == "catalog":
         dirty, clean, log = _load_catalog(spec, seed, limit, split, error_rate, held_out)
@@ -142,12 +143,22 @@ def _align(dirty: Table, clean: Table) -> Table:
     return Table(rows, clean.id_column, dirty.columns)
 
 
-def _load_csv(spec: dict, root: Path, limit: int | None) -> tuple[Table, Table | None]:
+def _load_csv(spec: dict, root: Path, limit: int | None,
+              split: str = "test") -> tuple[Table, Table | None]:
     id_column = spec.get("id_column", "id")
     folder = root / spec.get("folder", spec.get("name", ""))
     dirty = _read_csv(folder / spec.get("dirty", "dirty.csv"), id_column)
     clean_path = folder / spec.get("clean", "clean.csv")
     clean = _align(dirty, _read_csv(clean_path, id_column)) if clean_path.exists() else None
+    share = float(spec.get("dev_share", 0.0))
+    if share > 0:
+        from .table import restrict
+        ids = sorted(dirty.row_ids)
+        picked = random.Random(f"{spec.get('name', '')}:dev").sample(
+            ids, int(round(len(ids) * share)))
+        keep = set(picked) if split == "dev" else set(ids) - set(picked)
+        dirty = restrict(dirty, keep)
+        clean = restrict(clean, keep) if clean is not None else None
     if limit:
         keep = dirty.row_ids[:limit]
         from .table import restrict
@@ -162,7 +173,13 @@ def _load_catalog(spec: dict, seed: int, limit: int | None, split: str,
     if limit:
         source["offers"] = limit
         source["products"] = max(10, limit // 4)
-    clean = build(CatalogSpec(seed=seed, **source))
+    built = CatalogSpec(seed=seed, **source)
+    clean = build(built)
+    if not limit:
+        from .table import restrict
+        dev = built.dev_offers
+        keep = clean.row_ids[:dev] if split == "dev" else clean.row_ids[dev:]
+        clean = restrict(clean, set(keep))
     plan_spec = dict(spec.get("error_plan", {}))
     types = tuple(plan_spec.pop("types", ("typo", "missing", "format", "dependency", "swap")))
     extra = tuple(plan_spec.pop("held_out", ("U1", "U2", "U3")))

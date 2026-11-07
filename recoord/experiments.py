@@ -24,7 +24,8 @@ class RunConfig:
     out: str = "results"
     methods: tuple[str, ...] = tuple(POLICIES)
     agent: str = "offline"
-    model: str = "claude-opus-5"
+    model: str = "gpt-4o-mini"
+    base_url: str | None = None
     seed: int = 0
     limit: int | None = None
     split: str = "test"
@@ -36,6 +37,8 @@ class RunConfig:
     row_share: float = 1.0
     fail_rate: float = 0.0
     retries: int = 0
+    concurrency: int = 16
+    engine: str = "python"
     waves: int = 1
     shards: int = 1
     late_constraint: int | None = None
@@ -43,7 +46,7 @@ class RunConfig:
     freeze: str | None = None
     recalibrate: bool = False
     analyse: bool = False
-    analyse_limit: int = 10
+    analyse_limit: int = 25
     tag: str = ""
 
     @property
@@ -86,7 +89,7 @@ def _agent(cfg: RunConfig, spec: ClientSpec, dataset: Dataset, rules: Sequence[R
     if cfg.agent == "llm":
         from .llm import LLMClient
         return build_agent("llm", spec.name, rules, seed=seed,
-                           client=LLMClient(model=cfg.model),
+                           client=LLMClient(model=cfg.model, base_url=cfg.base_url),
                            private=dataset.private if spec.private else {})
     if cfg.agent == "rules":
         return build_agent("rules", spec.name, rules, seed=seed)
@@ -122,7 +125,7 @@ def collect(dataset: Dataset, cfg: RunConfig) -> tuple[list[Proposal], CallLog, 
         for client in clients:
             value = client.name.split("=", 1)[1]
             client.row_ids = owned_rows(dataset, cfg.partition, value)
-    fleet = Fleet(clients, retries=cfg.retries)
+    fleet = Fleet(clients, retries=cfg.retries, concurrency=cfg.concurrency)
     pool = fleet.collect(dataset.dirty)
     pool.sort(key=lambda p: (p.client, p.id))
     return pool, fleet.log, clients
@@ -133,7 +136,7 @@ def fresh_fleet(dataset: Dataset, cfg: RunConfig, start: CallLog) -> Fleet:
     if cfg.partition:
         for client in clients:
             client.row_ids = owned_rows(dataset, cfg.partition, client.name.split("=", 1)[1])
-    fleet = Fleet(clients, retries=cfg.retries)
+    fleet = Fleet(clients, retries=cfg.retries, concurrency=cfg.concurrency)
     fleet.log = CallLog(**{k: v for k, v in start.__dict__.items()})
     if cfg.freeze:
         fleet.freeze(cfg.freeze)
@@ -143,6 +146,9 @@ def fresh_fleet(dataset: Dataset, cfg: RunConfig, start: CallLog) -> Fleet:
 def run(cfg: RunConfig, dataset: Dataset | None = None) -> dict[str, Any]:
     dataset = dataset or load(cfg.dataset, root=cfg.root, seed=cfg.seed, limit=cfg.limit,
                               split=cfg.split, error_rate=cfg.error_rate)
+    if cfg.engine == "duckdb":
+        from .duck import DuckEngine
+        dataset.dirty.use_engine(DuckEngine)
     pool, initial, _clients = collect(dataset, cfg)
     late_pool: list[Proposal] = []
     if cfg.joining:
