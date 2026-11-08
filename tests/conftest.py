@@ -11,7 +11,7 @@ def demo():
 
 @pytest.fixture
 def demo_run(demo):
-    cfg = RunConfig(dataset="demo")
+    cfg = RunConfig(agent="offline", dataset="demo")
     pool, log, _ = collect(demo, cfg)
     return demo, cfg, pool, log
 

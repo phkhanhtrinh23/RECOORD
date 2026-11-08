@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Runs everything: install, tests, self-checks, datasets, sweeps, report.
 # Usage: ./scripts/run_all.sh [--quick | --full]
-#        OUT=<dir> SEEDS=<n> LIMIT=<rows> AGENT=offline|llm|rules ./scripts/run_all.sh
+#        OUT=<dir> SEEDS=<n> LIMIT=<rows> AGENT=llm|offline|rules ./scripts/run_all.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODE="${1:-}"
 OUT="${OUT:-results}"
-AGENT="${AGENT:-offline}"
+AGENT="${AGENT:-llm}"
+if [[ "$AGENT" == "llm" && -z "${OPENAI_API_KEY:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "== no OPENAI_API_KEY or ANTHROPIC_API_KEY set; using AGENT=offline"
+  AGENT=offline
+fi
 case "$MODE" in
   --quick) SEEDS="${SEEDS:-1}"; LIMIT="${LIMIT:-60}";  SWEEPS=(ablation) ;;
   --full)  SEEDS="${SEEDS:-5}"; LIMIT="${LIMIT:-0}";   SWEEPS=(policies ablation central calibration clients errors waves failures budget departure joining constraints sharding partition agents size) ;;

@@ -149,3 +149,25 @@ def test_a_keyless_agent_prices_calls_from_its_cost_model():
     agent = build_agent("offline", "c", [rule])
     assert agent.cost == CostModel()
     assert agent.cost.measured is False
+
+
+def test_a_run_goes_to_the_model_unless_told_otherwise():
+    from recoord.experiments import RunConfig
+    assert RunConfig().agent == "llm"
+    assert RunConfig().model == "gpt-4o-mini"
+    assert RunConfig().cache is False
+
+
+def test_completions_are_only_written_when_caching_is_asked_for(tmp_path):
+    from recoord.llm import LLMClient
+    assert LLMClient(model="gpt-4o-mini").cache is None
+    client = LLMClient(model="gpt-4o-mini", cache_dir=tmp_path / "c")
+    client._write_cache("p", {"values": ["v"], "confidence": 0.5})
+    assert client._read_cache("p")["values"] == ["v"]
+
+
+def test_a_missing_key_names_the_variable_and_the_way_round_it(monkeypatch, tmp_path):
+    pytest.importorskip("openai")
+    from recoord.cli import main
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert main(["run", "demo", "--out", str(tmp_path), "--quiet"]) == 1

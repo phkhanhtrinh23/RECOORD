@@ -23,8 +23,9 @@ class RunConfig:
     root: str = "data"
     out: str = "results"
     methods: tuple[str, ...] = tuple(POLICIES)
-    agent: str = "offline"
+    agent: str = "llm"
     model: str = "gpt-4o-mini"
+    cache: bool = False
     base_url: str | None = None
     seed: int = 0
     limit: int | None = None
@@ -89,7 +90,8 @@ def _agent(cfg: RunConfig, spec: ClientSpec, dataset: Dataset, rules: Sequence[R
     if cfg.agent == "llm":
         from .llm import LLMClient
         return build_agent("llm", spec.name, rules, seed=seed,
-                           client=LLMClient(model=cfg.model, base_url=cfg.base_url),
+                           client=LLMClient(model=cfg.model, base_url=cfg.base_url,
+                                            cache_dir=".cache/llm" if cfg.cache else None),
                            private=dataset.private if spec.private else {})
     if cfg.agent == "rules":
         return build_agent("rules", spec.name, rules, seed=seed)

@@ -76,10 +76,12 @@ def _datasets(args: argparse.Namespace) -> int:
 def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", default="data", help="where the CSV benchmarks live")
     parser.add_argument("--out", default="results")
-    parser.add_argument("--agent", default="offline", choices=["offline", "llm", "rules"],
+    parser.add_argument("--agent", default="llm", choices=["llm", "offline", "rules"],
                         help="where judgement steps come from")
     parser.add_argument("--model", default="gpt-4o-mini")
     parser.add_argument("--base-url", dest="base_url", default=None)
+    parser.add_argument("--cache", action="store_true",
+                        help="reuse completions on disk instead of calling again")
     parser.add_argument("--concurrency", type=int, default=16)
     parser.add_argument("--engine", default="python", choices=["python", "duckdb"])
     parser.add_argument("--seed", type=int, default=0)

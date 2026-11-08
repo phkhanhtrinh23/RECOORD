@@ -22,14 +22,17 @@ patches, query text, scores, and the answers it asks for — never client data.
 ## Install and run
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev,llm]'
+export OPENAI_API_KEY=...
 .venv/bin/recoord run catalog --limit 300
 ```
 
 That builds a multi-vendor catalog, injects errors, runs four agents over it,
-and merges their proposals with ReCoord and ten baselines. No API key and no
-download needed. Drop `--limit` for the whole split: 4,800 offers from
-eighteen vendors, with 1,200 more held back under `--split dev`.
+and merges their proposals with ReCoord and ten baselines. The agents go to
+GPT-4o-mini; `--agent offline` answers their judgement steps from the
+dataset's reference table instead and needs no key, no package and no network.
+Nothing is downloaded either way. Drop `--limit` for the whole split: 4,800
+offers from eighteen vendors, with 1,200 more held back under `--split dev`.
 
 Evidence queries run on an in-process relational engine by default, and
 `--engine duckdb` answers them through SQL on DuckDB instead. Clients are
@@ -81,21 +84,22 @@ rule without one leaves a judgement step, and the three backends differ only in
 who answers it. All of them emit the same proposals, so the coordinator and
 every baseline behave the same whichever one runs.
 
-- `--agent llm` puts a model behind the judgement steps through
+- `--agent llm` (the default) puts a model behind the judgement steps through
   [llm.py](recoord/llm.py). `--model` takes a backbone name — `gpt-4o-mini`
   (the default), `gpt-4o`, `claude-3.5-sonnet`, `llama-3.1-70b`,
   `qwen2.5-72b` — or any model id. Each resolves to a pinned version and a
   provider; the open-weights two go through any OpenAI-compatible endpoint, so
   set `--base-url` or `OPENAI_BASE_URL` to point at your own. Calls run at
   temperature 0, sixteen at a time, and token counts come from the API
-  response. Completions are cached under `.cache/llm`, so a repeat run is free
-  and returns the same answers.
-- `--agent offline` (the default) answers them from the dataset's reference
-  table at a per-client accuracy, and prices the calls with the per-call cost
-  model in [agents.py](recoord/agents.py). It needs no key, costs nothing and
-  repeats exactly, so it is the backend to develop and test against: every
-  policy draws from one identical pool, which makes the merge comparison like
-  for like.
+  response. Every call is a fresh one, so `--repeat 5` averages five
+  independent samples; `--cache` keeps completions under `.cache/llm` and
+  reuses them, which makes a repeat run free and identical.
+- `--agent offline` answers them from the dataset's reference table at a
+  per-client accuracy, and prices the calls with the per-call cost model in
+  [agents.py](recoord/agents.py). It needs no key, costs nothing and repeats
+  exactly, so it is the backend the tests and the self-checks use, and the one
+  to develop against: every policy draws from one identical pool, which makes
+  the merge comparison like for like.
 - `--agent rules` drops the judgement steps and keeps the programs: the fixed
   rule library a person writes in advance.
 

@@ -5,7 +5,7 @@ from recoord.model import Cell
 
 
 def results(dataset, names, limit=None):
-    cfg = RunConfig(dataset=dataset.name, limit=limit)
+    cfg = RunConfig(agent="offline", dataset=dataset.name, limit=limit)
     pool, log, _ = collect(dataset, cfg)
     out = {}
     for name in names:

@@ -6,7 +6,7 @@ from recoord.experiments import RunConfig, collect, fresh_fleet
 
 
 def run(catalog, **flags):
-    cfg = RunConfig(dataset="catalog", limit=40)
+    cfg = RunConfig(agent="offline", dataset="catalog", limit=40)
     pool, log, _ = collect(catalog, cfg)
     fleet = fresh_fleet(catalog, cfg, log)
     coordinator = Coordinator(catalog.dirty, catalog.constraints, fleet,
@@ -50,7 +50,7 @@ def test_without_the_dc_test_violations_remain(catalog):
 
 
 def test_replay_saves_calls_at_the_same_quality(catalog):
-    cfg = RunConfig(dataset="catalog", limit=40)
+    cfg = RunConfig(agent="offline", dataset="catalog", limit=40)
     pool, log, _ = collect(catalog, cfg)
     out = {}
     for name in ("recoord", "ivm-regen"):
@@ -76,8 +76,8 @@ def test_patches_alone_cannot_tell_the_two_pools_apart():
 
 def test_the_same_seed_gives_the_same_output():
     from recoord.experiments import RunConfig, run
-    a = run(RunConfig(dataset="catalog", limit=80, methods=("recoord",)))
-    b = run(RunConfig(dataset="catalog", limit=80, methods=("recoord",)))
+    a = run(RunConfig(agent="offline", dataset="catalog", limit=80, methods=("recoord",)))
+    b = run(RunConfig(agent="offline", dataset="catalog", limit=80, methods=("recoord",)))
     assert a["selected"] == b["selected"]
     assert a["output"] == b["output"]
     assert a["rows"][0]["f1"] == b["rows"][0]["f1"]
@@ -93,7 +93,7 @@ def test_a_late_constraint_leaves_no_violation():
     from recoord.experiments import RunConfig, collect, fresh_fleet
     from recoord.datasets import load
     dataset = load("catalog", seed=0, limit=60)
-    cfg = RunConfig(dataset="catalog", limit=60)
+    cfg = RunConfig(agent="offline", dataset="catalog", limit=60)
     pool, log, _ = collect(dataset, cfg)
     fleet = fresh_fleet(dataset, cfg, log)
     held, rest = dataset.constraints[0], dataset.constraints[1:]
@@ -109,7 +109,7 @@ def test_a_joining_client_keeps_the_guarantees():
     from recoord.experiments import RunConfig, collect, fresh_fleet
     from recoord.datasets import load
     dataset = load("catalog", seed=0, limit=60)
-    cfg = RunConfig(dataset="catalog", limit=60)
+    cfg = RunConfig(agent="offline", dataset="catalog", limit=60)
     pool, log, _ = collect(dataset, cfg)
     early = [p for p in pool if p.client != "gtin-pool"]
     late = [p for p in pool if p.client == "gtin-pool"]

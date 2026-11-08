@@ -30,7 +30,7 @@ def check_guarantees(limit: int = 60, seeds: int = 3, **_: Any) -> dict[str, Any
     worst = {"stale": 0, "violations": 0, "conflicts": 0, "protected_nulls": 0}
     for seed in range(seeds):
         dataset = load("catalog", seed=seed, limit=limit)
-        cfg = RunConfig(dataset="catalog", seed=seed, limit=limit)
+        cfg = RunConfig(agent="offline", dataset="catalog", seed=seed, limit=limit)
         pool, log, _ = collect(dataset, cfg)
         rng = random.Random(seed)
         sample = rng.sample(pool, k=min(len(pool), 40))
@@ -58,7 +58,7 @@ def _conflicts(members) -> int:
 
 def check_order_independence(limit: int = 40, orders: int = 8, **_: Any) -> dict[str, Any]:
     dataset = load("catalog", seed=0, limit=limit)
-    cfg = RunConfig(dataset="catalog", seed=0, limit=limit)
+    cfg = RunConfig(agent="offline", dataset="catalog", seed=0, limit=limit)
     pool, log, _ = collect(dataset, cfg)
     pool = pool[:14]
     rng = random.Random(0)
@@ -81,7 +81,7 @@ def _fingerprint(table: Table) -> str:
 
 def check_sharding(limit: int = 60, shards: tuple[int, ...] = (1, 2, 4), **_: Any) -> dict[str, Any]:
     dataset = load("catalog", seed=0, limit=limit)
-    cfg = RunConfig(dataset="catalog", seed=0, limit=limit)
+    cfg = RunConfig(agent="offline", dataset="catalog", seed=0, limit=limit)
     pool, log, _clients = collect(dataset, cfg)
     outcomes = set()
     for n in shards:

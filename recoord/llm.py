@@ -45,14 +45,15 @@ class Reply:
 
 class LLMClient:
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.0,
-                 cache_dir: str | Path = ".cache/llm", provider: str | None = None,
+                 cache_dir: str | Path | None = None, provider: str | None = None,
                  max_tokens: int = 512, base_url: str | None = None):
         resolved, default_provider, default_url = resolve(model)
         self.model = resolved
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.cache = Path(cache_dir)
-        self.cache.mkdir(parents=True, exist_ok=True)
+        self.cache = Path(cache_dir) if cache_dir else None
+        if self.cache is not None:
+            self.cache.mkdir(parents=True, exist_ok=True)
         self.provider = provider or default_provider
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL") or default_url
         self._client: Any = None
@@ -99,13 +100,15 @@ class LLMClient:
         usage = reply.usage
         return reply.choices[0].message.content or "", Usage(1, usage.prompt_tokens, usage.completion_tokens)
 
-    def _path(self, prompt: str) -> Path:
+    def _path(self, prompt: str) -> Path | None:
+        if self.cache is None:
+            return None
         digest = hashlib.sha256(f"{self.model}|{self.temperature}|{prompt}".encode()).hexdigest()
         return self.cache / f"{digest}.json"
 
     def _read_cache(self, prompt: str) -> dict | None:
         path = self._path(prompt)
-        if not path.exists():
+        if path is None or not path.exists():
             return None
         try:
             return json.loads(path.read_text())
@@ -113,7 +116,10 @@ class LLMClient:
             return None
 
     def _write_cache(self, prompt: str, payload: dict) -> None:
-        self._path(prompt).write_text(json.dumps(payload, sort_keys=True))
+        path = self._path(prompt)
+        if path is None:
+            return
+        path.write_text(json.dumps(payload, sort_keys=True))
 
 
 def _require(package: str, model: str):
