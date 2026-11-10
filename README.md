@@ -39,12 +39,6 @@ Evidence queries run on an in-process relational engine by default, and
 polled sixteen at a time; `--concurrency` changes that. Neither setting
 changes the result.
 
-```bash
-./scripts/run_all.sh          # tests, self-checks, runs, sweeps, one report
-./scripts/get_data.sh         # the public CSV benchmarks into data/
-./scripts/run_all.sh --full   # include them, five seeds each
-```
-
 ## Commands
 
 ```bash
@@ -72,6 +66,18 @@ holds four things:
   its own row, `row_in_group` its whole constraint group while writing one
   cell, `group` the group as a single bundled proposal.
 - **clients**: who runs which rules.
+
+The repo ships specs for five public CSV benchmarks. Put each one's
+`dirty.csv` and `clean.csv` under `data/<name>/` and it runs like any other
+dataset:
+
+| dataset | rows | source |
+| --- | --- | --- |
+| hospital | 1,000 | <https://github.com/BigDaMa/raha/tree/master/datasets/hospital> |
+| flights | 2,376 | <https://github.com/BigDaMa/raha/tree/master/datasets/flights> |
+| beers | 2,410 | <https://github.com/BigDaMa/raha/tree/master/datasets/beers> |
+| rayyan | 1,000 | <https://github.com/BigDaMa/raha/tree/master/datasets/rayyan> |
+| tax | 200,000 | <https://github.com/BigDaMa/raha/tree/master/datasets/tax> |
 
 ```bash
 .venv/bin/recoord run myspec.yaml --methods recoord lww
